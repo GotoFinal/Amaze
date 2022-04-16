@@ -1,7 +1,6 @@
 use std::f32::consts::PI;
 use glam::Vec2;
-
-use crate::engine::renderer::Vertex;
+use crate::engine::renderer::renderer::Vertex;
 
 pub fn generate_circle_vertices(slices: i32, radius: f32, center: Vec2) -> Vec<Vertex> {
     let mut vertices: Vec<Vertex> = Vec::with_capacity((slices * 3) as usize);
@@ -13,7 +12,7 @@ pub fn generate_circle_vertices(slices: i32, radius: f32, center: Vec2) -> Vec<V
         let angle = i as f32 * angle_factor;
         let vertex_x = center.x + radius * angle.cos();
         let vertex_y = center.y + radius * angle.sin();
-        if (finished) {
+        if finished {
             vertex_b = Vertex { position: [vertex_x, vertex_y] };
             finished = false;
         } else {
