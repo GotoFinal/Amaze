@@ -330,7 +330,8 @@ impl GraphicEngine {
 
         // TODO: simplify
         let cam_pos = Vec3::new(0.0, 0.0, -1.0);
-        let view = Mat4::look_at_lh(cam_pos, Vec3::ZERO, Vec3::new(0.0, 1.0, 0.0));
+        let mut view = Mat4::look_at_lh(cam_pos, Vec3::ZERO, Vec3::new(0.0, 0.5, 0.0));
+        view.y_axis.y *= -1.0;
         let aspect = dimensions.x / dimensions.y;
         let orto = Mat4::orthographic_lh(-aspect, aspect, -1.0, 1.0, 0.1, 1.1);
         let mut projection = orto; // Mat4::perspective_infinite_lh(70.0_f32.to_radians(), dimensions.x / dimensions.y, 0.1);

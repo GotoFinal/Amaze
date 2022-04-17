@@ -1,12 +1,17 @@
+#![windows_subsystem = "windows"]
+use std::borrow::Borrow;
 use std::cell::{Ref, RefCell, RefMut};
 
 use glam::Vec2;
+use legion::{IntoQuery, World};
+use winit::dpi::Position;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 
 use engine::gamesync::GameSync;
 
-use crate::engine::object::gameobject::{Mesh, Transform};
+use crate::engine::input::{Input, InputSystem};
+use crate::engine::object::gameobject::{Mesh, Transform, Velocity};
 use crate::engine::renderer::graphic_object::GraphicObjectDesc;
 use crate::engine::renderer::options::GraphicOptions;
 use crate::engine::renderer::primitives::generate_circle_vertices;
@@ -23,6 +28,7 @@ trait GameEngine {
 
 struct GameData {
     graphics: RefCell<GraphicEngine>,
+    input: InputSystem,
 }
 
 impl GameEngine for GameData {
@@ -35,11 +41,12 @@ impl GameEngine for GameData {
     }
 
     fn create() -> (GameData, EventLoop<()>) {
-        let mut event_loop = EventLoop::new();
+        let event_loop = EventLoop::new();
         let options = GraphicOptions::default();
-        let mut renderer: GraphicEngine = Renderer::init(options, &event_loop);
+        let renderer: GraphicEngine = Renderer::init(options, &event_loop);
         return (GameData {
-            graphics: RefCell::new(renderer)
+            graphics: RefCell::new(renderer),
+            input: Input::create(),
         }, event_loop);
     }
 }
@@ -47,17 +54,27 @@ impl GameEngine for GameData {
 fn main() {
     let (mut game, event_loop) = GameData::create();// how?
 
+    let mut world = World::default();
+    let entity = world.push((Transform {
+        position: Vec2::ZERO,
+        scale: Vec2::ONE,
+        rotation: 0.0,
+    }, Mesh {
+        vertices: generate_circle_vertices(200, 0.04, Vec2::ZERO)
+    }));
+
+
     // TODO: should just start a level that will handle creation of stuff
     game.graphics_mut().create_graphic_object(GraphicObjectDesc {
         transform: Transform::at(Vec2::new(0.2, -0.2)),
-        mesh: Mesh {
-            vertices: generate_circle_vertices(200, 0.05, Vec2::new(0.0, 0.0))
-        },
+        mesh: world.entry(entity).unwrap().get_component::<Mesh>().unwrap().clone(),
     });
 
     // renderer.render_loop_lazy_test(&mut event_loop);
 
+    // TODO: i guess i need another thread that will run this loop?
     event_loop.run(move |event, _, control_flow| {
+        let event = game.input.send_event(event);
         match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -77,12 +94,21 @@ fn main() {
                 ..
             } => {
                 // this needs to go
-                let mut renderer = game.graphics_mut();
-                let translated = renderer.translate_position(Vec2::new(position.x as f32, position.y as f32));
-                renderer.move_object(0, translated);
+                // let mut renderer = game.graphics_mut();
+                // let translated = renderer.translate_position(Vec2::new(position.x as f32, position.y as f32));
+                // renderer.move_object(0, translated);
                 // mouse_pos = position;
             }
-            Event::MainEventsCleared => {}
+            Event::MainEventsCleared => {
+                let input = game.input.get_move();
+                let mut renderer = game.graphics_mut();
+                let mut query = <(&mut Transform)>::query();
+
+                for transform in query.iter_mut(&mut world) {
+                    transform.position += (input / 100.0);
+                    renderer.move_object(0, transform.position);
+                }
+            }
             Event::RedrawEventsCleared => {
                 let mut renderer = game.graphics_mut();
                 renderer.validate();
