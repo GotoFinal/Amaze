@@ -72,6 +72,7 @@ pub fn get_sample_count(sample: Multisampling, max_samples: SampleCounts) -> Sam
 pub fn get_framebuffers(
     images: &[Arc<SwapchainImage<Window>>],
     render_pass: Arc<RenderPass>,
+    sample: SampleCount
 ) -> Vec<Arc<Framebuffer>> {
     images
         .iter()
@@ -81,7 +82,7 @@ pub fn get_framebuffers(
                 AttachmentImage::transient_multisampled(
                     render_pass.device().clone(),
                     view.image().dimensions().width_height(),
-                    SampleCount::Sample2,
+                    sample,
                     image.format(),
                 )
                     .unwrap(),

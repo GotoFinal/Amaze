@@ -1,10 +1,10 @@
 use glam::Vec2;
 use legion::{Entity, World};
 
-use crate::engine::renderer::renderer::Vertex;
+use crate::engine::renderer::renderer::{Vertex, VertexIndex};
 
 // TODO: Do I try to abstract ECS/legion away or just whatever?
-trait GameObject {
+pub trait GameObject {
     fn id(&self) -> Entity;
 }
 
@@ -32,18 +32,19 @@ pub struct Velocity(Vec2);
 #[derive(Clone, Debug)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
+    pub indices: Vec<VertexIndex>,
 }
 
 fn test() {
-    let mut world = World::default();
-    let entity = world.push((Transform {
-        position: Vec2::ZERO,
-        scale: Vec2::ONE,
-        rotation: 0.0,
-    },
-                             Mesh {
-                                 vertices: Vec::new()
-                             }
-    ));
+    // let mut world = World::default();
+    // let entity = world.push((Transform {
+    //     position: Vec2::ZERO,
+    //     scale: Vec2::ONE,
+    //     rotation: 0.0,
+    // },
+    //                          Mesh {
+    //                              vertices: Vec::new()
+    //                          }
+    // ));
     // world.entry()
 }

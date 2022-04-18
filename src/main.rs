@@ -1,20 +1,19 @@
 #![windows_subsystem = "windows"]
-use std::borrow::Borrow;
+
 use std::cell::{Ref, RefCell, RefMut};
 
 use glam::Vec2;
 use legion::{IntoQuery, World};
-use winit::dpi::Position;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 
 use engine::gamesync::GameSync;
 
 use crate::engine::input::{Input, InputSystem};
-use crate::engine::object::gameobject::{Mesh, Transform, Velocity};
+use crate::engine::object::gameobject::{Mesh, Transform};
 use crate::engine::renderer::graphic_object::GraphicObjectDesc;
 use crate::engine::renderer::options::GraphicOptions;
-use crate::engine::renderer::primitives::generate_circle_vertices;
+use crate::engine::renderer::primitives::generate_circle_mesh;
 use crate::engine::renderer::renderer::{GraphicEngine, Renderer};
 
 mod engine;
@@ -59,15 +58,15 @@ fn main() {
         position: Vec2::ZERO,
         scale: Vec2::ONE,
         rotation: 0.0,
-    }, Mesh {
-        vertices: generate_circle_vertices(200, 0.04, Vec2::ZERO)
-    }));
+    }, generate_circle_mesh(200, 0.1)));
 
 
+    let material = game.graphics.borrow().materials.borrow().get_default();
     // TODO: should just start a level that will handle creation of stuff
     game.graphics_mut().create_graphic_object(GraphicObjectDesc {
         transform: Transform::at(Vec2::new(0.2, -0.2)),
         mesh: world.entry(entity).unwrap().get_component::<Mesh>().unwrap().clone(),
+        material,
     });
 
     // renderer.render_loop_lazy_test(&mut event_loop);

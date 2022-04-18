@@ -5,12 +5,13 @@ use vulkano::buffer::CpuAccessibleBuffer;
 
 use crate::engine::object::gameobject::{Mesh, Transform};
 use crate::engine::renderer::buffers::BufferCreator;
-use crate::engine::renderer::renderer::Vertex;
+use crate::engine::renderer::material::{Material, MaterialKey};
+use crate::engine::renderer::renderer::{Vertex, VertexIndex};
 
-#[derive(Debug, Clone)]
 pub struct GraphicObjectDesc {
     pub transform: Transform,
     pub mesh: Mesh,
+    pub material: MaterialKey
 }
 
 // TODO: how do i store the actual stuff to render? for later:
@@ -20,11 +21,12 @@ pub struct GraphicObjectDesc {
 // - but will rust even allow that?
 // - but do I want that data? i could push it to GPU and forget i guess?
 // - but for now i plan 2d game so do i care?
-#[derive(Debug, Clone)]
-pub struct TheStuffToRender {
+pub struct RenderMesh {
     pub transform: Transform,
-    pub vertices_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>, // thats bascially the same data..., but lets think about it later
-    // TODO: material i guess?
+    pub vertices_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
+    pub indices_buffer: Arc<CpuAccessibleBuffer<[VertexIndex]>>,
+    pub material: MaterialKey
+
 }
 
 pub trait GraphicObject {
@@ -33,15 +35,17 @@ pub trait GraphicObject {
     fn create(desc: GraphicObjectDesc, buffers: &dyn BufferCreator) -> Self;
 }
 
-impl GraphicObject for TheStuffToRender {
+impl GraphicObject for RenderMesh {
     fn set_position(&mut self, pos: Vec2) {
         self.transform.position = pos
     }
 
     fn create(desc: GraphicObjectDesc, buffers: &dyn BufferCreator) -> Self {
-        return TheStuffToRender {
+        return RenderMesh {
             transform: desc.transform,
             vertices_buffer: buffers.create_cpu_vertex_buffer(desc.mesh.vertices),
+            indices_buffer: buffers.create_cpu_indices_buffer(desc.mesh.indices),
+            material: desc.material
         };
     }
 }

@@ -1,15 +1,19 @@
+use std::cell::RefCell;
+use std::ops::Deref;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec2, Vec3};
-use vulkano::buffer::{TypedBufferAccess};
+use vulkano::buffer::TypedBufferAccess;
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage,
     PrimaryAutoCommandBuffer, SubpassContents,
 };
 use vulkano::device::{Device, DeviceCreateInfo, Queue, QueueCreateInfo};
 use vulkano::device::DeviceExtensions;
-use vulkano::image::SwapchainImage;
+use vulkano::device::physical::PhysicalDevice;
+use vulkano::image::{SampleCount, SampleCounts, SwapchainImage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::render_pass::{Framebuffer, RenderPass};
@@ -23,8 +27,8 @@ use winit::dpi::PhysicalSize;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
-use crate::engine::renderer::graphic_object::{GraphicObject, GraphicObjectDesc, TheStuffToRender};
-use crate::engine::renderer::material::{load_default_material, Material};
+use crate::engine::renderer::graphic_object::{GraphicObject, GraphicObjectDesc, RenderMesh};
+use crate::engine::renderer::material::{load_default_material, MaterialRegistry, Materials};
 use crate::engine::renderer::options::GraphicOptions;
 use crate::engine::renderer::vulkan::{combine_sample_counts, create_swapchain, get_framebuffers, get_render_pass, get_sample_count, select_physical_device};
 use crate::GameSync;
@@ -36,6 +40,8 @@ use crate::GameSync;
 pub struct Vertex {
     pub position: [f32; 2],
 }
+
+pub type VertexIndex = u16;
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
@@ -69,6 +75,7 @@ pub struct GraphicEngine {
     options: GraphicOptions,
     instance: Arc<Instance>,
     pub(crate) device: Arc<Device>,
+    physical_device_properties: PhysicalDeviceProperties,
     queue: Arc<Queue>,
     pub(crate) render_pass: Arc<RenderPass>,
     pub(crate) viewport: Viewport,
@@ -76,9 +83,9 @@ pub struct GraphicEngine {
     // TODO: what they belong to?
     swapchain: Arc<Swapchain<Window>>,
     surface: Arc<Surface<Window>>,
-    materials: Option<Material>,
+    pub(crate) materials: Rc<RefCell<dyn Materials>>,
     // because who needs more than one? TODO: or something
-    objects: Vec<TheStuffToRender>,
+    objects: Vec<RenderMesh>,
     window_resized: bool,
     recreate_swapchain: bool,
     old_size: PhysicalSize<u32>,
@@ -86,6 +93,13 @@ pub struct GraphicEngine {
     framebuffers: Vec<Arc<Framebuffer>>,
     sync: GameSync,
     frame: u64,
+}
+
+#[derive(Debug, Default, Copy, Clone)]
+struct PhysicalDeviceProperties {
+    color_samples: SampleCounts,
+    depth_samples: SampleCounts,
+    max_samples: SampleCounts
 }
 
 impl Renderer for GraphicEngine {
@@ -150,10 +164,13 @@ impl Renderer for GraphicEngine {
         let depth_samples = physical_device.properties().framebuffer_depth_sample_counts;
         let max_samples: vulkano::image::SampleCounts =
             combine_sample_counts(color_samples, depth_samples);
+        let physical_device_properties = PhysicalDeviceProperties {
+            color_samples, depth_samples, max_samples
+        };
         let sample_count = get_sample_count(options.multisampling, max_samples);
 
         let render_pass = get_render_pass(device.clone(), swapchain.clone(), sample_count);
-        let framebuffers = get_framebuffers(&images, render_pass.clone());
+        let framebuffers = get_framebuffers(&images, render_pass.clone(), sample_count);
 
         let mut viewport = Viewport {
             origin: [0.0, 0.0],
@@ -162,6 +179,7 @@ impl Renderer for GraphicEngine {
         };
 
         let images_size = images.len();
+        let materials = Rc::new(RefCell::new(MaterialRegistry::create(device.clone(), render_pass.clone(), viewport.clone())));
 
         // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa this is bad
         let mut engine = GraphicEngine {
@@ -169,9 +187,10 @@ impl Renderer for GraphicEngine {
             options,
             viewport,
             device,
+            physical_device_properties,
             queue,
             render_pass,
-            materials: None,
+            materials,
             objects: Vec::new(),
             command_buffers: Vec::new(),
             framebuffers,
@@ -184,7 +203,6 @@ impl Renderer for GraphicEngine {
             sync: GameSync::new(images_size),
             frame: 0,
         };
-        Self::load_materials(&mut engine);
         return engine;
     }
 
@@ -204,12 +222,12 @@ impl Renderer for GraphicEngine {
         };
         self.swapchain = new_swapchain;
         self.images = new_images;
-        self.framebuffers = get_framebuffers(self.images.as_ref(), self.render_pass.clone());
+        self.framebuffers = get_framebuffers(self.images.as_ref(), self.render_pass.clone(), Self::get_samples(self.physical_device_properties, self.options));
 
         if self.window_resized {
             self.window_resized = false;
             self.viewport.dimensions = new_dimensions.into();
-            Self::load_materials(self);
+            self.materials.borrow_mut().reload(self);
             Self::generate_command_buffers(self);
         }
     }
@@ -300,17 +318,17 @@ impl Renderer for GraphicEngine {
     }
 
     fn get_sync(&self) -> &GameSync {
-        return &self.sync
+        return &self.sync;
     }
 }
 
 impl GraphicEngine {
-    fn load_materials(graphic_engine: &mut GraphicEngine) {
-        graphic_engine.materials = Some(load_default_material(graphic_engine));
+    fn get_samples(physical_device_properties: PhysicalDeviceProperties, options: GraphicOptions) -> SampleCount {
+        return get_sample_count(options.multisampling, physical_device_properties.max_samples);
     }
 
     fn generate_command_buffers(graphic_engine: &mut GraphicEngine) {
-        if graphic_engine.materials.is_none() || graphic_engine.objects.is_empty() {
+        if graphic_engine.objects.is_empty() {
             println!("Nothing to render so i will spam instead");
             if !graphic_engine.command_buffers.is_empty() {
                 graphic_engine.command_buffers = Vec::new()
@@ -321,28 +339,17 @@ impl GraphicEngine {
     }
 
     fn create_command_buffers(graphic_engine: &mut GraphicEngine) {
-        let object = &graphic_engine.objects[0]; // TODO, support more objects
-        let material = graphic_engine.materials.as_ref().unwrap();
-        let pipeline = material.graphic_pipeline.clone();
-        let vertex_buffer = object.vertices_buffer.clone();
-
-        let dimensions: Vec2 = graphic_engine.viewport.dimensions.into();
-
         // TODO: simplify
+        let dimensions: Vec2 = graphic_engine.viewport.dimensions.into();
         let cam_pos = Vec3::new(0.0, 0.0, -1.0);
         let mut view = Mat4::look_at_lh(cam_pos, Vec3::ZERO, Vec3::new(0.0, 0.5, 0.0));
         view.y_axis.y *= -1.0;
         let aspect = dimensions.x / dimensions.y;
         let orto = Mat4::orthographic_lh(-aspect, aspect, -1.0, 1.0, 0.1, 1.1);
-        let mut projection = orto; // Mat4::perspective_infinite_lh(70.0_f32.to_radians(), dimensions.x / dimensions.y, 0.1);
+        let mut projection = orto;
+        let projection_view = projection * view;
 
-        let transform = object.transform;
-
-        // let rotation = (graphic_engine.frame as f32 * 0.4).to_radians();
-        let quat = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), transform.rotation);
-        let model = Mat4::from_scale_rotation_translation(transform.scale.extend(0.0), quat, transform.position.extend(0.0));
-        let matrix = projection * view * model;
-
+        // TODO: why we write to all of them? isnt the idea to use one at the time?
         graphic_engine.command_buffers = graphic_engine
             .framebuffers
             .iter()
@@ -354,28 +361,21 @@ impl GraphicEngine {
                 )
                     .unwrap();
 
-                let layout = material.pipeline_layout.clone();
 
-                builder
+                let mut commands: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> = builder
                     .begin_render_pass(
                         framebuffer.clone(),
                         SubpassContents::Inline,
                         vec![[0.0, 0.0, 0.0, 0.0].into(), [0.0, 0.0, 0.0, 0.0].into()],
                     )
-                    .unwrap()
-                    .bind_pipeline_graphics(pipeline.clone())
-                    .bind_vertex_buffers(0, vertex_buffer.clone())
-                    .push_constants(
-                        layout,
-                        0,
-                        ShaderObjectData {
-                            matrix: matrix,
-                        },
-                    )
-                    .draw(vertex_buffer.len() as u32, 1, 0, 0)
-                    .unwrap()
-                    .end_render_pass()
                     .unwrap();
+
+                for object in &graphic_engine.objects {
+                    let material = object.material.clone();
+                    commands = graphic_engine.materials.borrow().get(material).deref().borrow().draw(object, projection_view, commands)
+                }
+
+                commands.end_render_pass().unwrap();
 
                 Arc::new(builder.build().unwrap())
             })

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use glam::Vec2;
-use VirtualKeyCode::{LShift, Space};
+use VirtualKeyCode::{LControl, LShift, RControl, Space};
 use winit::event::{Event, VirtualKeyCode};
 use winit::event::VirtualKeyCode::{A, D, Down, Left, Right, RShift, S, Up, W};
 use winit_input_helper::WinitInputHelper;
@@ -11,6 +11,7 @@ pub type InputId = u32;
 pub trait Input {
     const MOVE: InputId = 2;
     const ACTION: InputId = 3;
+    const SECONDARY_ACTION: InputId = 4;
 
     fn create() -> Self;
 
@@ -33,6 +34,7 @@ impl Input for InputSystem {
         let mut input = WinitInputHelper::new();
         let mut mapping: HashMap<InputId, Box<dyn ValuedInput>> = HashMap::new();
         mapping.insert(Self::ACTION, Box::new(ButtonInput::simple(vec![Space, LShift, RShift], 1.0)));
+        mapping.insert(Self::SECONDARY_ACTION, Box::new(ButtonInput::simple(vec![LControl, RControl], 1.0)));
         mapping.insert(Self::MOVE, Box::new(
             PlaneInput {
                 vertical: AxisInput {
