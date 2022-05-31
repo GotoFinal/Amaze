@@ -23,10 +23,14 @@ pub struct GraphicObjectDesc {
 // - but for now i plan 2d game so do i care?
 pub struct RenderMesh {
     pub transform: Transform,
+    pub data: RenderMeshData,
+    pub material: MaterialKey
+}
+
+#[derive(Clone)]
+pub struct RenderMeshData {
     pub vertices_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
     pub indices_buffer: Arc<CpuAccessibleBuffer<[VertexIndex]>>,
-    pub material: MaterialKey
-
 }
 
 pub trait GraphicObject {
@@ -43,8 +47,7 @@ impl GraphicObject for RenderMesh {
     fn create(desc: GraphicObjectDesc, buffers: &dyn BufferCreator) -> Self {
         return RenderMesh {
             transform: desc.transform,
-            vertices_buffer: buffers.create_cpu_vertex_buffer(desc.mesh.vertices),
-            indices_buffer: buffers.create_cpu_indices_buffer(desc.mesh.indices),
+            data: buffers.create_cpu_buffer(&desc.mesh),
             material: desc.material
         };
     }

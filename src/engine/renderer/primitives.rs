@@ -5,9 +5,10 @@ use glam::Vec2;
 use crate::engine::renderer::renderer::{Vertex, VertexIndex};
 use crate::Mesh;
 
-pub fn generate_circle_mesh(vertex_count: usize, radius: f32) -> Mesh {
+pub fn generate_circle_mesh(id: u32, vertex_count: usize, radius: f32) -> Mesh {
     let (vertices, indices) = generate_circle(vertex_count, radius);
     return Mesh {
+        id,
         vertices,
         indices,
     };

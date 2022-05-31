@@ -1,4 +1,5 @@
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -27,11 +28,11 @@ use winit::dpi::PhysicalSize;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
-use crate::engine::renderer::graphic_object::{GraphicObject, GraphicObjectDesc, RenderMesh};
+use crate::engine::renderer::graphic_object::{GraphicObject, GraphicObjectDesc, RenderMesh, RenderMeshData};
 use crate::engine::renderer::material::{load_default_material, MaterialRegistry, Materials};
 use crate::engine::renderer::options::GraphicOptions;
 use crate::engine::renderer::vulkan::{combine_sample_counts, create_swapchain, get_framebuffers, get_render_pass, get_sample_count, select_physical_device};
-use crate::GameSync;
+use crate::{GameSync, Mesh};
 
 // TODO: wanted to split code to keep it more clean and this file is already a mess
 
@@ -93,6 +94,7 @@ pub struct GraphicEngine {
     framebuffers: Vec<Arc<Framebuffer>>,
     sync: GameSync,
     frame: u64,
+    pub(crate) mesh_cache: RefCell<HashMap<u32, RenderMeshData>>
 }
 
 #[derive(Debug, Default, Copy, Clone)]
@@ -109,8 +111,7 @@ impl Renderer for GraphicEngine {
     fn create_graphic_object(&mut self, desc: GraphicObjectDesc) -> u32 {
         let object = GraphicObject::create(desc, self);
         self.objects.push(object);
-        Self::generate_command_buffers(self);
-        return self.objects.len() as u32;
+        return self.objects.len() as u32 - 1;
     }
 
     // fn init(options: GraphicOptions, event_loop: &mut EventLoop<()>) -> GraphicEngine {
@@ -202,6 +203,7 @@ impl Renderer for GraphicEngine {
             images,
             sync: GameSync::new(images_size),
             frame: 0,
+            mesh_cache: RefCell::new(HashMap::new())
         };
         return engine;
     }
@@ -253,7 +255,7 @@ impl Renderer for GraphicEngine {
     // maybe i should know rust or something
     fn render(&mut self) {
         self.frame += 1;
-        Self::create_command_buffers(self);
+        Self::record_command_buffers(self, self.sync.get_current_i());
         let (image_i, suboptimal, acquire_future) =
             match acquire_next_image(self.swapchain.clone(), None) {
                 Ok(r) => r,
@@ -323,6 +325,10 @@ impl Renderer for GraphicEngine {
 }
 
 impl GraphicEngine {
+    pub(crate) fn get_cached_mesh(&self, id: u32) -> Option<RenderMeshData> {
+        return self.mesh_cache.borrow().get(&id).cloned();
+    }
+
     fn get_samples(physical_device_properties: PhysicalDeviceProperties, options: GraphicOptions) -> SampleCount {
         return get_sample_count(options.multisampling, physical_device_properties.max_samples);
     }
@@ -354,32 +360,56 @@ impl GraphicEngine {
             .framebuffers
             .iter()
             .map(|framebuffer| {
-                let mut builder = AutoCommandBufferBuilder::primary(
-                    graphic_engine.device.clone(),
-                    graphic_engine.queue.family(), // do i not need to clone or vsc is retarded
-                    CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
-                )
-                    .unwrap();
-
-
-                let mut commands: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> = builder
-                    .begin_render_pass(
-                        framebuffer.clone(),
-                        SubpassContents::Inline,
-                        vec![[0.0, 0.0, 0.0, 0.0].into(), [0.0, 0.0, 0.0, 0.0].into()],
-                    )
-                    .unwrap();
-
-                for object in &graphic_engine.objects {
-                    let material = object.material.clone();
-                    commands = graphic_engine.materials.borrow().get(material).deref().borrow().draw(object, projection_view, commands)
-                }
-
-                commands.end_render_pass().unwrap();
-
-                Arc::new(builder.build().unwrap())
+                Self::record_command_buffer(&graphic_engine, projection_view, framebuffer)
             })
             .collect()
+    }
+
+    fn record_command_buffers(graphic_engine: &mut GraphicEngine, image_i: usize) {
+        let projection_view = Self::create_projection_view(graphic_engine);
+        let framebuffer = graphic_engine.framebuffers.get(image_i).unwrap();
+        graphic_engine.command_buffers[image_i] = Self::record_command_buffer(&graphic_engine, projection_view, framebuffer)
+    }
+
+    // TODO: should be made out of camera after migration to 3d
+    fn create_projection_view(graphic_engine: &mut GraphicEngine) -> Mat4 {
+// TODO: simplify
+        let dimensions: Vec2 = graphic_engine.viewport.dimensions.into();
+        let cam_pos = Vec3::new(0.0, 0.0, -1.0);
+        let mut view = Mat4::look_at_lh(cam_pos, Vec3::ZERO, Vec3::new(0.0, 0.5, 0.0));
+        view.y_axis.y *= -1.0;
+        let aspect = dimensions.x / dimensions.y;
+        let orto = Mat4::orthographic_lh(-aspect, aspect, -1.0, 1.0, 0.1, 1.1);
+        let mut projection = orto;
+        let projection_view = projection * view;
+        projection_view
+    }
+
+    fn record_command_buffer(graphic_engine: &&mut GraphicEngine, projection_view: Mat4, framebuffer: &Arc<Framebuffer>) -> Arc<PrimaryAutoCommandBuffer> {
+        let mut builder = AutoCommandBufferBuilder::primary(
+            graphic_engine.device.clone(),
+            graphic_engine.queue.family(), // do i not need to clone or vsc is retarded
+            CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
+        )
+            .unwrap();
+
+
+        let mut commands: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> = builder
+            .begin_render_pass(
+                framebuffer.clone(),
+                SubpassContents::Inline,
+                vec![[0.0, 0.0, 0.0, 0.0].into(), [0.0, 0.0, 0.0, 0.0].into()],
+            )
+            .unwrap();
+
+        for object in &graphic_engine.objects {
+            let material = object.material.clone();
+            commands = graphic_engine.materials.borrow().get(material).deref().borrow().draw(object, projection_view, commands)
+        }
+
+        commands.end_render_pass().unwrap();
+
+        Arc::new(builder.build().unwrap())
     }
 
     fn adjust_physical_side(size: PhysicalSize<u32>, old_size: PhysicalSize<u32>) -> PhysicalSize<u32> {

@@ -3,14 +3,14 @@
 use std::cell::{Ref, RefCell, RefMut};
 
 use glam::Vec2;
-use legion::{IntoQuery, World};
+use legion::{Entity, IntoQuery, World};
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 
 use engine::gamesync::GameSync;
 
 use crate::engine::input::{Input, InputSystem};
-use crate::engine::object::gameobject::{Mesh, Transform};
+use crate::engine::object::gameobject::{Mesh, RenderId, Transform};
 use crate::engine::renderer::graphic_object::GraphicObjectDesc;
 use crate::engine::renderer::options::GraphicOptions;
 use crate::engine::renderer::primitives::generate_circle_mesh;
@@ -54,20 +54,36 @@ fn main() {
     let (mut game, event_loop) = GameData::create();// how?
 
     let mut world = World::default();
-    let entity = world.push((Transform {
-        position: Vec2::ZERO,
-        scale: Vec2::ONE,
-        rotation: 0.0,
-    }, generate_circle_mesh(200, 0.1)));
+    let mesh = generate_circle_mesh(0, 200, 0.005);
+    let mut x = -1.0;
+    let mut y = -1.0;
+    for i in 0..1000 {
+        if (x < 1.0) {
+            x += 0.01;
+        } else {
+            x = -1.0;
+            y += 0.01;
+        }
+        world.push((Transform {
+            position: Vec2::new(x, y),
+            scale: Vec2::ONE,
+            rotation: 0.0,
+        }, mesh.clone(), RenderId { id: 0 }));
+    }
+
 
 
     let material = game.graphics.borrow().materials.borrow().get_default();
-    // TODO: should just start a level that will handle creation of stuff
-    game.graphics_mut().create_graphic_object(GraphicObjectDesc {
-        transform: Transform::at(Vec2::new(0.2, -0.2)),
-        mesh: world.entry(entity).unwrap().get_component::<Mesh>().unwrap().clone(),
-        material,
-    });
+    let mut query = <(&Transform, &Mesh, &mut RenderId)>::query();
+    for (transform, mesh, id) in query.iter_mut(&mut world) {
+        // TODO: should just start a level that will handle creation of stuff
+        id.id = game.graphics_mut().create_graphic_object(GraphicObjectDesc {
+            transform: transform.clone(),
+            mesh: mesh.clone(),
+            material,
+        });
+    }
+
 
     // renderer.render_loop_lazy_test(&mut event_loop);
 
@@ -100,12 +116,14 @@ fn main() {
             }
             Event::MainEventsCleared => {
                 let input = game.input.get_move();
-                let mut renderer = game.graphics_mut();
-                let mut query = <(&mut Transform)>::query();
+                if (input != Vec2::ZERO) {
+                    let mut renderer = game.graphics_mut();
+                    let mut query = <(&mut Transform, &RenderId)>::query();
 
-                for transform in query.iter_mut(&mut world) {
-                    transform.position += (input / 100.0);
-                    renderer.move_object(0, transform.position);
+                    for (transform, id) in query.iter_mut(&mut world) {
+                        transform.position += (input / 100.0);
+                        renderer.move_object(id.id, transform.position);
+                    }
                 }
             }
             Event::RedrawEventsCleared => {

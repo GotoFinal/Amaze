@@ -100,12 +100,12 @@ impl Material for MaterialData {
         let model = Mat4::from_scale_rotation_translation(transform.scale.extend(0.0), quat, transform.position.extend(0.0));
         let matrix = projection_view * model;
 
-        let vertices_size = mesh.vertices_buffer.len();
-        let indices_size = mesh.indices_buffer.len();
+        let vertices_size = mesh.data.vertices_buffer.len();
+        let indices_size = mesh.data.indices_buffer.len();
         let pipeline = self.graphic_pipeline.clone();
         return commands.bind_pipeline_graphics(pipeline)
-            .bind_vertex_buffers(0, mesh.vertices_buffer.clone())
-            .bind_index_buffer(mesh.indices_buffer.clone())
+            .bind_vertex_buffers(0, mesh.data.vertices_buffer.clone())
+            .bind_index_buffer(mesh.data.indices_buffer.clone())
             .push_constants(
                 self.pipeline_layout.clone(),
                 0,

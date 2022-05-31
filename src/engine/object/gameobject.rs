@@ -15,6 +15,11 @@ pub struct Transform {
     pub rotation: f32, // Do i want 3d rotation?
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RenderId {
+    pub id: u32
+}
+
 impl Transform {
     pub(crate) fn at(position: Vec2) -> Transform {
         return Transform {
@@ -31,6 +36,7 @@ pub struct Velocity(Vec2);
 //TODO: do i need something smarter and just push data to gpu and remove? probably does not mater for 2d game
 #[derive(Clone, Debug)]
 pub struct Mesh {
+    pub id: u32,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<VertexIndex>,
 }
