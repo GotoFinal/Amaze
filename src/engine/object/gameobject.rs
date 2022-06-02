@@ -15,11 +15,11 @@ pub struct RenderId {
     pub id: u32
 }
 
-#[derive(Component)]
+#[derive(Component, Copy, Clone)]
 pub struct Camera {
-    pub enabled: bool,
     pub far_clip_plane: f32,
-    pub near_clip_plane: f32
+    pub near_clip_plane: f32,
+    pub field_of_view: f32
 }
 
 impl Transform {

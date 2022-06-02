@@ -3,9 +3,11 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
+use bevy_ecs::prelude::Entity;
+use bevy_ecs::world::EntityRef;
 
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Quat, Vec2, Vec3};
+use glam::{EulerRot, Mat4, Quat, Vec2, Vec3};
 use vulkano::buffer::TypedBufferAccess;
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage,
@@ -32,7 +34,8 @@ use crate::engine::renderer::graphic_object::{GraphicObject, GraphicObjectDesc, 
 use crate::engine::renderer::material::{load_default_material, MaterialRegistry, Materials};
 use crate::engine::renderer::options::GraphicOptions;
 use crate::engine::renderer::vulkan::{combine_sample_counts, create_swapchain, get_framebuffers, get_render_pass, get_sample_count, select_physical_device};
-use crate::{GameSync, Mesh};
+use crate::{Camera, GameSync, Mesh, Transform};
+use crate::engine::renderer::camera::RendererCamera;
 
 // TODO: wanted to split code to keep it more clean and this file is already a mess
 
@@ -54,6 +57,8 @@ vulkano::impl_vertex!(Vertex, position);
 
 pub(crate) trait Renderer {
     fn init(options: GraphicOptions, event_loop: &EventLoop<()>) -> Self;
+
+    fn should_render(&self) -> bool;
 
     fn validate(&mut self);
 
@@ -79,6 +84,7 @@ pub struct GraphicEngine {
     physical_device_properties: PhysicalDeviceProperties,
     queue: Arc<Queue>,
     pub(crate) render_pass: Arc<RenderPass>,
+    pub(crate) camera: RendererCamera,
     pub(crate) viewport: Viewport,
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
     // TODO: what they belong to?
@@ -191,6 +197,14 @@ impl Renderer for GraphicEngine {
             physical_device_properties,
             queue,
             render_pass,
+            camera: RendererCamera {
+                camera: Camera {
+                    far_clip_plane: 100.0,
+                    near_clip_plane: 0.1,
+                    field_of_view: 90.0
+                },
+                transform: Transform::at(Vec3::ZERO)
+            },
             materials,
             objects: Vec::new(),
             command_buffers: Vec::new(),
@@ -244,16 +258,24 @@ impl Renderer for GraphicEngine {
         self.window_resized = true;
     }
 
+    fn should_render(&self) -> bool {
+        // TODO: invalid surface flag to avoid this call? does it matter? probably not?
+        let size = self.surface.window().inner_size();
+        return size.height != 0 && size.width != 0
+    }
+
     fn validate(&mut self) {
         if self.window_resized || self.recreate_swapchain {
-            self.rebuild()
+            if self.should_render() {
+                self.rebuild()
+            }
         }
     }
 
-    // TODO: if i want to join everything in single spot I need to be able to run render loop once and return future?
-    // or i can pass the future as argument, but why would render engine need to have access to that
-    // maybe i should know rust or something
     fn render(&mut self) {
+        if !self.should_render() {
+            return
+        }
         self.frame += 1;
         Self::record_command_buffers(self, self.sync.get_current_i());
         let (image_i, suboptimal, acquire_future) =
@@ -366,13 +388,19 @@ impl GraphicEngine {
 // TODO: simplify
         let dimensions: Vec2 = graphic_engine.viewport.dimensions.into();
 
-
-        let cam_pos = Vec3::new(0.0, 0.0, -1.0);
-        let mut view = Mat4::look_at_lh(cam_pos, Vec3::ZERO, Vec3::new(0.0, 0.5, 0.0));
+        let mut view = Mat4::look_at_lh(
+            graphic_engine.camera.transform.position,
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.5, 0.0)
+        );
         view.y_axis.y *= -1.0;
+
         let aspect = dimensions.x / dimensions.y;
-        let orto = Mat4::orthographic_lh(-aspect, aspect, -1.0, 1.0, 0.1, 1.1);
-        let mut projection = orto;
+        let perspective = Mat4::perspective_lh(
+            graphic_engine.camera.camera.field_of_view.to_radians(), aspect, graphic_engine.camera.camera.near_clip_plane, graphic_engine.camera.camera.far_clip_plane
+        );
+        // let orto = Mat4::orthographic_lh(-aspect, aspect, -1.0, 1.0, 0.1, 1.1);
+        let mut projection = perspective;
         let projection_view = projection * view;
         projection_view
     }

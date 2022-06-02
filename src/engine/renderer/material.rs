@@ -95,8 +95,7 @@ impl Material for MaterialData {
 
     fn draw<'a>(&self, mesh: &RenderMesh, projection_view: Mat4, commands: &'a mut PrimaryCommandBuilder) -> &'a mut PrimaryCommandBuilder {
         let transform = mesh.transform;
-        // let quat = transform.rotation;
-        let quat = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), 0.0);
+        let quat = transform.rotation;
         let model = Mat4::from_scale_rotation_translation(transform.scale, quat, transform.position);
         let matrix = projection_view * model;
 

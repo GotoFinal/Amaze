@@ -13,7 +13,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use engine::gamesync::GameSync;
 
 use crate::engine::input::{Input, InputSystem};
-use crate::engine::object::gameobject::{Mesh, RenderId, Transform, Velocity};
+use crate::engine::object::gameobject::{Camera, Mesh, RenderId, Transform, Velocity};
 use crate::engine::renderer::graphic_object::GraphicObjectDesc;
 use crate::engine::renderer::options::GraphicOptions;
 use crate::engine::renderer::primitives::generate_circle_mesh;
@@ -26,6 +26,8 @@ trait GameEngine {
     fn graphics_mut(&self) -> RefMut<GraphicEngine>;
 
     fn create() -> (GameData, EventLoop<()>);
+
+    fn send_event<'a, T>(&mut self, winit_event: Event<'a, T>) -> Event<'a, T>;
 }
 
 struct GameData {
@@ -51,12 +53,51 @@ impl GameEngine for GameData {
             input: Input::create(),
         }, event_loop);
     }
+
+    fn send_event<'a, T>(&mut self, winit_event: Event<'a, T>) -> Event<'a, T> {
+        self.input.send_event(winit_event)
+    }
+}
+
+fn update_camera(query: Query<(&Camera, &Transform)>, game_res: NonSendMut<GameData>) {
+    for (camera, transform) in query.iter() {
+        game_res.graphics.borrow_mut().camera.camera = *camera;
+        game_res.graphics.borrow_mut().camera.transform = *transform;
+    }
+}
+
+fn update_input_old(mut query: Query<(&mut Transform, &RenderId)>, game_res: NonSendMut<GameData>) {
+    let input = game_res.input.get_move();
+    if (input != Vec2::ZERO) {
+        let mut renderer = game_res.graphics_mut();
+        for (mut transform, id) in query.iter_mut() {
+            transform.position += (input / 100.0).extend(0.0);
+            renderer.move_object(id.id, transform.position);
+        }
+    }
+}
+
+fn update_input(mut query: Query<(&mut Transform, &Camera)>, game_res: NonSendMut<GameData>) {
+    let input = game_res.input.get_move();
+    if input != Vec2::ZERO {
+        for (mut transform, _) in query.iter_mut() {
+            transform.position += (input / 100.0).extend(0.0);
+        }
+    }
+}
+
+fn update_render(game_res: NonSendMut<GameData>) {
+    let mut renderer = game_res.graphics_mut();
+    renderer.validate();
+    renderer.render();
 }
 
 fn main() {
     let (mut game, event_loop) = GameData::create();// how?
 
     let mut world = World::default();
+    // Create a new Schedule, which defines an execution strategy for Systems
+    let mut schedule = Schedule::default();
     let mesh = generate_circle_mesh(0, 200, 0.005);
     let mut x = -1.0;
     let mut y = -1.0;
@@ -77,6 +118,24 @@ fn main() {
             .insert(RenderId { id: 0 });
     }
 
+    world.spawn()
+        .insert(Transform {
+            position: Vec3::new(0.0, 0.0, -1.0),
+            scale: Vec3::ONE,
+            rotation: Quat::IDENTITY.inverse(),
+        })
+        .insert(Camera {
+            far_clip_plane: 200.0,
+            near_clip_plane: 0.1,
+            field_of_view: 90.0,
+        });
+
+    schedule.add_stage("basic_stage", SystemStage::single_threaded()
+        .with_system(update_camera)
+        .with_system(update_render)
+        .with_system(update_input),
+    );
+
 
     let material = game.graphics.borrow().materials.borrow().get_default();
 
@@ -93,9 +152,11 @@ fn main() {
 
     // renderer.render_loop_lazy_test(&mut event_loop);
 
+    world.insert_non_send_resource(game);
     // TODO: i guess i need another thread that will run this loop?
     event_loop.run(move |event, _, control_flow| {
-        let event = game.input.send_event(event);
+        let mut game: Mut<GameData> = world.get_non_send_resource_mut().unwrap();
+        let event = game.send_event(event);
         match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -120,23 +181,8 @@ fn main() {
                 // renderer.move_object(0, translated);
                 // mouse_pos = position;
             }
-            Event::MainEventsCleared => {
-                let input = game.input.get_move();
-                if (input != Vec2::ZERO) {
-                    let mut renderer = game.graphics_mut();
-
-                    let mut state: SystemState<Query<(&mut Transform, &RenderId)>> = SystemState::from_world(&mut world);
-                    let mut query = state.get_mut(&mut world);
-                    for (mut transform, id) in query.iter_mut() {
-                        transform.position += (input / 100.0).extend(0.0);
-                        renderer.move_object(id.id, transform.position);
-                    }
-                }
-            }
             Event::RedrawEventsCleared => {
-                let mut renderer = game.graphics_mut();
-                renderer.validate();
-                renderer.render();
+                schedule.run(&mut world);
             }
             _ => (),
         }
