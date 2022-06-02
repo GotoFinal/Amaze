@@ -433,20 +433,22 @@ impl GraphicEngine {
     }
 
     fn adjust_physical_side(size: PhysicalSize<u32>, old_size: PhysicalSize<u32>) -> PhysicalSize<u32> {
-        let bigger: bool = size.height > old_size.height || size.width > old_size.width;
-
-        let expected_width = 3;
-        let expected_height = 4;
-
-        let width_ratio = size.width as f32 / expected_width as f32;
-        let height_ratio = size.height as f32 / expected_height as f32;
-        let size_multi = if bigger {
-            width_ratio.max(height_ratio)
-        } else {
-            width_ratio.min(height_ratio)
-        }
-            .floor() as u32;
-
-        return PhysicalSize::new(size_multi * expected_width, size_multi * expected_height);
+        return size;
+        // we no longer care about aspect ratio, but for future reference:
+        // let bigger: bool = size.height > old_size.height || size.width > old_size.width;
+        //
+        // let expected_width = 3;
+        // let expected_height = 4;
+        //
+        // let width_ratio = size.width as f32 / expected_width as f32;
+        // let height_ratio = size.height as f32 / expected_height as f32;
+        // let size_multi = if bigger {
+        //     width_ratio.max(height_ratio)
+        // } else {
+        //     width_ratio.min(height_ratio)
+        // }
+        //     .floor() as u32;
+        //
+        // return PhysicalSize::new(size_multi * expected_width, size_multi * expected_height);
     }
 }
