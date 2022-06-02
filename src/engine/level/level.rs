@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use legion::World;
+use bevy_ecs::world::World;
 
 trait Level {
     fn new() -> Self;

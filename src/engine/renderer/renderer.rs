@@ -39,7 +39,7 @@ use crate::{GameSync, Mesh};
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Zeroable, Pod)]
 pub struct Vertex {
-    pub position: [f32; 2],
+    pub position: [f32; 3],
 }
 
 pub type VertexIndex = u16;
@@ -65,7 +65,7 @@ pub(crate) trait Renderer {
 
     fn create_graphic_object(&mut self, desc: GraphicObjectDesc) -> u32;
 
-    fn move_object(&mut self, index: u32, pos: Vec2);
+    fn move_object(&mut self, index: u32, pos: Vec3);
 
     fn translate_position(&self, position: Vec2) -> Vec2;
 
@@ -315,7 +315,7 @@ impl Renderer for GraphicEngine {
         return Vec2::new(x, y);
     }
 
-    fn move_object(&mut self, index: u32, pos: Vec2) {
+    fn move_object(&mut self, index: u32, pos: Vec3) {
         self.objects[index as usize].set_position(pos);
     }
 
@@ -345,17 +345,7 @@ impl GraphicEngine {
     }
 
     fn create_command_buffers(graphic_engine: &mut GraphicEngine) {
-        // TODO: simplify
-        let dimensions: Vec2 = graphic_engine.viewport.dimensions.into();
-        let cam_pos = Vec3::new(0.0, 0.0, -1.0);
-        let mut view = Mat4::look_at_lh(cam_pos, Vec3::ZERO, Vec3::new(0.0, 0.5, 0.0));
-        view.y_axis.y *= -1.0;
-        let aspect = dimensions.x / dimensions.y;
-        let orto = Mat4::orthographic_lh(-aspect, aspect, -1.0, 1.0, 0.1, 1.1);
-        let mut projection = orto;
-        let projection_view = projection * view;
-
-        // TODO: why we write to all of them? isnt the idea to use one at the time?
+        let projection_view = Self::create_projection_view(graphic_engine);
         graphic_engine.command_buffers = graphic_engine
             .framebuffers
             .iter()
@@ -375,6 +365,8 @@ impl GraphicEngine {
     fn create_projection_view(graphic_engine: &mut GraphicEngine) -> Mat4 {
 // TODO: simplify
         let dimensions: Vec2 = graphic_engine.viewport.dimensions.into();
+
+
         let cam_pos = Vec3::new(0.0, 0.0, -1.0);
         let mut view = Mat4::look_at_lh(cam_pos, Vec3::ZERO, Vec3::new(0.0, 0.5, 0.0));
         view.y_axis.y *= -1.0;

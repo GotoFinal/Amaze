@@ -7,7 +7,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, quat, Vec3};
 use vulkano::buffer::TypedBufferAccess;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::device::Device;
@@ -23,21 +23,20 @@ use crate::engine::renderer::graphic_object::RenderMesh;
 use crate::engine::renderer::renderer::{ShaderObjectData, Vertex};
 use crate::GraphicEngine;
 
-// TODO: can i use something simpler than mat4 for simple 2d game? how do i calc perspective correctly?
 mod vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
         src: "
 #version 450
 
-layout(location = 0) in vec2 position;
+layout(location = 0) in vec3 position;
 layout(push_constant) uniform constants
 {
 	mat4 matrix;
 } PushConstants;
 
 void main() {
-    gl_Position = PushConstants.matrix * vec4(position, 0.0, 1.0);
+    gl_Position = PushConstants.matrix * vec4(position, 1.0);
 }
 "
     }
@@ -96,8 +95,9 @@ impl Material for MaterialData {
 
     fn draw<'a>(&self, mesh: &RenderMesh, projection_view: Mat4, commands: &'a mut PrimaryCommandBuilder) -> &'a mut PrimaryCommandBuilder {
         let transform = mesh.transform;
-        let quat = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), transform.rotation);
-        let model = Mat4::from_scale_rotation_translation(transform.scale.extend(0.0), quat, transform.position.extend(0.0));
+        // let quat = transform.rotation;
+        let quat = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), 0.0);
+        let model = Mat4::from_scale_rotation_translation(transform.scale, quat, transform.position);
         let matrix = projection_view * model;
 
         let vertices_size = mesh.data.vertices_buffer.len();

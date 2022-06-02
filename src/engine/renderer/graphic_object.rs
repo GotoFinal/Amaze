@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use glam::Vec2;
+use glam::{Vec2, Vec3};
 use vulkano::buffer::CpuAccessibleBuffer;
 
 use crate::engine::object::gameobject::{Mesh, Transform};
@@ -34,13 +34,13 @@ pub struct RenderMeshData {
 }
 
 pub trait GraphicObject {
-    fn set_position(&mut self, pos: Vec2);
+    fn set_position(&mut self, pos: Vec3);
 
     fn create(desc: GraphicObjectDesc, buffers: &dyn BufferCreator) -> Self;
 }
 
 impl GraphicObject for RenderMesh {
-    fn set_position(&mut self, pos: Vec2) {
+    fn set_position(&mut self, pos: Vec3) {
         self.transform.position = pos
     }
 

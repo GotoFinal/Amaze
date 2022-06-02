@@ -1,40 +1,42 @@
-use glam::Vec2;
-use legion::{Entity, World};
+use glam::{Quat, Vec2, Vec3};
+use bevy_ecs::prelude::*;
 
 use crate::engine::renderer::renderer::{Vertex, VertexIndex};
 
-// TODO: Do I try to abstract ECS/legion away or just whatever?
-pub trait GameObject {
-    fn id(&self) -> Entity;
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Component, Clone, Copy)]
 pub struct Transform {
-    pub position: Vec2,
-    pub scale: Vec2,
-    pub rotation: f32, // Do i want 3d rotation?
+    pub position: Vec3,
+    pub scale: Vec3,
+    pub rotation: Quat
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Component)]
 pub struct RenderId {
     pub id: u32
 }
 
+#[derive(Component)]
+pub struct Camera {
+    pub enabled: bool,
+    pub far_clip_plane: f32,
+    pub near_clip_plane: f32
+}
+
 impl Transform {
-    pub(crate) fn at(position: Vec2) -> Transform {
+    pub(crate) fn at(position: Vec3) -> Transform {
         return Transform {
             position,
-            scale: Vec2::ONE,
-            rotation: 0.0,
+            scale: Vec3::ONE,
+            rotation: Quat::IDENTITY,
         };
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Velocity(Vec2);
+#[derive(Component, Clone, Copy)]
+pub struct Velocity(Vec3);
 
-//TODO: do i need something smarter and just push data to gpu and remove? probably does not mater for 2d game
-#[derive(Clone, Debug)]
+//TODO: do i need something smarter and just push data to gpu and remove?
+#[derive(Component, Clone)]
 pub struct Mesh {
     pub id: u32,
     pub vertices: Vec<Vertex>,
