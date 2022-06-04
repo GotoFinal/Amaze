@@ -10,10 +10,10 @@ use winit::window::Window;
 pub(crate) type GpuFence = FenceSignalFuture<
     PresentFuture<
         CommandBufferExecFuture<
-            JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Window>>,
+            JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture<Arc<Window>>>,
             Arc<PrimaryAutoCommandBuffer>,
         >,
-        Window,
+        Arc<Window>,
     >,
 >;
 

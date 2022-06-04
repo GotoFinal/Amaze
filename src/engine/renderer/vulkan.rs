@@ -25,7 +25,7 @@ pub fn combine_sample_counts(a: SampleCounts, b: SampleCounts) -> SampleCounts {
 
 pub fn select_physical_device<'a>(
     instance: &'a Arc<Instance>,
-    surface: Arc<Surface<Window>>,
+    surface: Arc<Surface<Arc<Window>>>,
     device_extensions: &DeviceExtensions,
 ) -> (PhysicalDevice<'a>, QueueFamily<'a>) {
     let (physical_device, queue_family) = PhysicalDevice::enumerate(&instance)
@@ -70,7 +70,7 @@ pub fn get_sample_count(sample: Multisampling, max_samples: SampleCounts) -> Sam
 }
 
 pub fn get_framebuffers(
-    images: &[Arc<SwapchainImage<Window>>],
+    images: &[Arc<SwapchainImage<Arc<Window>>>],
     render_pass: Arc<RenderPass>,
     sample: SampleCount
 ) -> Vec<Arc<Framebuffer>> {
@@ -102,7 +102,7 @@ pub fn get_framebuffers(
 
 pub fn get_render_pass(
     device: Arc<Device>,
-    swapchain: Arc<Swapchain<Window>>,
+    swapchain: Arc<Swapchain<Arc<Window>>>,
     sample: SampleCount,
 ) -> Arc<RenderPass> {
     match sample {
@@ -148,7 +148,7 @@ pub fn get_render_pass(
     }
 }
 
-pub fn create_swapchain(options: GraphicOptions, surface: &Arc<Surface<Window>>, physical_device: PhysicalDevice, device: &Arc<Device>) -> (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) {
+pub fn create_swapchain(options: GraphicOptions, surface: &Arc<Surface<Arc<Window>>>, physical_device: PhysicalDevice, device: &Arc<Device>) -> (Arc<Swapchain<Arc<Window>>>, Vec<Arc<SwapchainImage<Arc<Window>>>>) {
     let caps = physical_device
         .surface_capabilities(&surface, Default::default())
         .expect("failed to get surface capabilities");
@@ -168,7 +168,7 @@ pub fn create_swapchain(options: GraphicOptions, surface: &Arc<Surface<Window>>,
     };
     let image_count = min(target_image_count, caps.min_image_count);
     println!("Creating swapchain with {} images", image_count);
-    let (mut swapchain, images): (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) =
+    let (mut swapchain, images): (Arc<Swapchain<Arc<Window>>>, Vec<Arc<SwapchainImage<Arc<Window>>>>) =
         Swapchain::new(
             device.clone(),
             surface.clone(),

@@ -168,7 +168,7 @@ fn main() {
         .expect("failed to create buffer");
 
     builder
-        .clear_color_image(image.clone(), ClearValue::Float([0.0, 0.0, 1.0, 1.0]))
+        .clear_color_image(image.clone(), ClearValue::Float([0.4, 0.4, 0.4, 1.0]))
         .unwrap()
         .copy_image_to_buffer(image.clone(), buf.clone())
         .unwrap();

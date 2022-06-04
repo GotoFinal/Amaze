@@ -3,10 +3,11 @@ use std::sync::Arc;
 use glam::{Vec2, Vec3};
 use vulkano::buffer::CpuAccessibleBuffer;
 
-use crate::engine::object::gameobject::{Mesh, Transform};
+use crate::engine::object::gameobject::{Mesh};
 use crate::engine::renderer::buffers::BufferCreator;
 use crate::engine::renderer::material::{Material, MaterialKey};
 use crate::engine::renderer::renderer::{Vertex, VertexIndex};
+use crate::Transform;
 
 pub struct GraphicObjectDesc {
     pub transform: Transform,
@@ -41,7 +42,7 @@ pub trait GraphicObject {
 
 impl GraphicObject for RenderMesh {
     fn set_position(&mut self, pos: Vec3) {
-        self.transform.position = pos
+        self.transform.set_position(pos)
     }
 
     fn create(desc: GraphicObjectDesc, buffers: &dyn BufferCreator) -> Self {

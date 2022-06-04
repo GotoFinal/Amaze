@@ -22,7 +22,6 @@ use vulkano::shader::{ShaderModule, ShaderStage};
 use crate::engine::renderer::graphic_object::RenderMesh;
 use crate::engine::renderer::renderer::{ShaderObjectData, Vertex};
 use crate::GraphicEngine;
-
 mod vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
@@ -30,12 +29,16 @@ mod vertex_shader {
 #version 450
 
 layout(location = 0) in vec3 position;
+layout(location = 1) in vec3 normal;
+
+layout(location = 0) out vec3 v_normal;
 layout(push_constant) uniform constants
 {
 	mat4 matrix;
 } PushConstants;
 
 void main() {
+    v_normal = normalize(normal);
     gl_Position = PushConstants.matrix * vec4(position, 1.0);
 }
 "
@@ -48,10 +51,11 @@ mod fragment_shader {
         src: "
 #version 450
 
+layout(location = 0) in vec3 v_normal;
 layout(location = 0) out vec4 f_color;
-
 void main() {
-    f_color = vec4((cos(normalize(gl_FragCoord.xyz) * 100)), 1.0);
+    f_color = vec4(clamp(dot(v_normal, -vec3(10.0f, 10.0f, 10.00f)), 0.0f, 1.0f) * vec3(1.0f, 0.93f, 0.56f), 1.0f);
+    //f_color = vec4(v_normal, 1.0);
 }
 "
     }
@@ -95,8 +99,8 @@ impl Material for MaterialData {
 
     fn draw<'a>(&self, mesh: &RenderMesh, projection_view: Mat4, commands: &'a mut PrimaryCommandBuilder) -> &'a mut PrimaryCommandBuilder {
         let transform = mesh.transform;
-        let quat = transform.rotation;
-        let model = Mat4::from_scale_rotation_translation(transform.scale, quat, transform.position);
+        let quat = transform.rotation();
+        let model = Mat4::from_scale_rotation_translation(transform.scale(), quat, transform.position());
         let matrix = projection_view * model;
 
         let vertices_size = mesh.data.vertices_buffer.len();

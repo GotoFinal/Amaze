@@ -1,14 +1,7 @@
-use glam::{Quat, Vec2, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 use bevy_ecs::prelude::*;
 
 use crate::engine::renderer::renderer::{Vertex, VertexIndex};
-
-#[derive(Component, Clone, Copy)]
-pub struct Transform {
-    pub position: Vec3,
-    pub scale: Vec3,
-    pub rotation: Quat
-}
 
 #[derive(Component)]
 pub struct RenderId {
@@ -20,16 +13,6 @@ pub struct Camera {
     pub far_clip_plane: f32,
     pub near_clip_plane: f32,
     pub field_of_view: f32
-}
-
-impl Transform {
-    pub(crate) fn at(position: Vec3) -> Transform {
-        return Transform {
-            position,
-            scale: Vec3::ONE,
-            rotation: Quat::IDENTITY,
-        };
-    }
 }
 
 #[derive(Component, Clone, Copy)]

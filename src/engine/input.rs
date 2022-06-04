@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::ops::{Div, Mul};
 
-use glam::Vec2;
+use glam::{UVec2, Vec2};
 use VirtualKeyCode::{LControl, LShift, RControl, Space};
 use winit::event::{Event, VirtualKeyCode};
 use winit::event::VirtualKeyCode::{A, D, Down, Left, Right, RShift, S, Up, W};
@@ -8,6 +9,60 @@ use winit_input_helper::WinitInputHelper;
 
 pub type InputId = u32;
 
+// TODO: reseign this garbage, its bad, but idk how to do it in rust.
+// The basic idea:
+// Action based input system, you register action like "move" or "shoot" or "mic",
+// each action have it input type, for example "move" is 2d axis, "shoot"/"mic" is Bool
+// Then each action can have multiple input providers, like moving can be WSAD keys or maybe mouse movement or analog joystick.
+// There should be possibility to also change some inputs from being simple Bool to a toggle.
+// Because single action can be implemented using both simple keys and analog input,
+// the system must support wrapping some inputs into another, like AxisInput::from_buttons(positive, negative)
+// Additionally the Input classes should be easy so serialise, as they would be later loaded from configuration files or other sources.
+// System should also support feeding events to inputs/actions to support more complicated combos that require buffering,
+// like double clicking or more complicated combinations and toggles that need to track their state internally.
+
+// It should be possible to normalize inputs in future, so when adding diff controllers support it should return same values for same inputs,
+// like avoiding one device returning analog value from 0 to 1 and other device from -1 to 1
+
+// Actions must be also categorised based on their, so they can be disabled and enabled in groups based on current engine state.
+// For example depending if player is running or swimming we might have multiple actions with SPACE input that either jumps or ascends,
+// so it should be possible to enable/disable contexts, like:
+// system.add_context("walk");
+// system.swap_context("walk", "swimming")
+
+// Code should be focus on being easy to use when using it outside of the module itself, so actually using actions and creating inputs.
+// pseudo-code api usage:
+// let action = system.new_action<Axis2D>("move", vec![Contexts::Walk, Contexts::Swim]);
+// let input = Input2D::from_axis(
+//                 InputAxis::from_buttons(InputKey::simple(vec![Up, W])), InputAxis::from_buttons(InputKey::simple(vec![Down, S])),  // Up OR W, etc....
+//                 InputAxis::from_buttons(InputKey::simple(vec![Right, D])), InputAxis::from_buttons(InputKey::simple(vec![Left, A])),
+//             );
+// system.add_input(action, input);
+// system.add_input(action, other_input);
+// then anywhere in code: let move_input : Axis2D = action.get();
+// or
+// let action = system.new_action<Axis2D>("camera_rot", vec![Contexts::Walk, Contexts::Swim]);
+// let input = Input2D::mouse_move();
+// system.add_input(action, input);
+// then anywhere in code: let camera_move : Axis2D = action.get();
+// or
+// let action = system.new_action<Bool>("mic", vec![Contexts::Global]);
+// let input = InputButton::combo(vec![Ctrl, M]).as_toggle(); // Ctrl and M
+// system.add_input(action, input);
+// then anywhere in code: if(action.has_changed()) // where has_changed would be a flag set to true for single cpu frame when value changed.
+
+// extra goals:
+// Event support in actions, it would be great to be able to register simple functions as event handlers for certain inputs, like:
+// let action = system.new_action<Bool>("pause");
+// let input = InputButton::simple(vec![Esc]).as_toggle();
+// system.add_input(action, input);
+// TODO: how do i ensure access to engine state inside listener without polluting input code with engine code?
+// action.on_change(on_pause_change);
+// fn on_pause_change(&self /* engine state? */, action: Arc<dyn Action<Bool>>) {
+//     self.paused = action.get();
+// }
+// But do i really need it? its all in the loop anyways. Can't even find good example.
+//
 pub trait Input {
     const MOVE: InputId = 2;
     const ACTION: InputId = 3;
@@ -17,9 +72,15 @@ pub trait Input {
 
     fn get_move(&self) -> Vec2;
 
+    fn get_mouse_move(&self) -> Vec2;
+
+    fn get_mouse_position(&self) -> Vec2;
+
+    fn get_mouse_position_normalized(&self) -> Vec2;
+
     fn is_action(&self) -> bool;
 
-    fn send_event<'a, T>(&mut self, event: Event<'a, T>) -> Event<'a, T>;
+    fn send_event<'a, T>(&mut self, event: &Event<'a, T>);
 }
 
 pub struct InputSystem {
@@ -58,14 +119,28 @@ impl Input for InputSystem {
             .as_vec2(self)
     }
 
+    fn get_mouse_move(&self) -> Vec2 {
+        return self.system.mouse_diff().into()
+    }
+
+    fn get_mouse_position(&self) -> Vec2 {
+        return self.system.mouse().unwrap_or_default().into()
+    }
+
+    fn get_mouse_position_normalized(&self) -> Vec2 {
+        let pos = self.get_mouse_position();
+        let resolution = self.system.resolution().unwrap_or((100, 100));
+        let rel = pos.div(Vec2::new(resolution.0 as f32, resolution.1 as f32)) * 2.0;
+        return rel - 1.0
+    }
+
     fn is_action(&self) -> bool {
         return self.inputs.get(&Self::ACTION).unwrap()
             .as_bool(self)
     }
 
-    fn send_event<'a, T>(&mut self, winit_event: Event<'a, T>) -> Event<'a, T> {
-        self.system.update(&winit_event);
-        winit_event
+    fn send_event<'a, T>(&mut self, winit_event: &Event<'a, T>) {
+        self.system.update(winit_event);
     }
 }
 

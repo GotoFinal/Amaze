@@ -16,6 +16,7 @@ use vulkano::command_buffer::{
 use vulkano::device::{Device, DeviceCreateInfo, Queue, QueueCreateInfo};
 use vulkano::device::DeviceExtensions;
 use vulkano::device::physical::PhysicalDevice;
+use vulkano::format::ClearValue;
 use vulkano::image::{SampleCount, SampleCounts, SwapchainImage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::pipeline::graphics::viewport::Viewport;
@@ -25,7 +26,7 @@ use vulkano::swapchain::{
     SwapchainCreateInfo, SwapchainCreationError,
 };
 use vulkano::sync::{self, FlushError, GpuFuture};
-use vulkano_win::VkSurfaceBuild;
+use vulkano_win::{create_surface_from_winit, VkSurfaceBuild};
 use winit::dpi::PhysicalSize;
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
@@ -43,6 +44,7 @@ use crate::engine::renderer::camera::RendererCamera;
 #[derive(Debug, Default, Copy, Clone, Zeroable, Pod)]
 pub struct Vertex {
     pub position: [f32; 3],
+    pub normal: [f32; 3],
 }
 
 pub type VertexIndex = u16;
@@ -53,10 +55,10 @@ pub struct ShaderObjectData {
     pub matrix: Mat4,
 }
 
-vulkano::impl_vertex!(Vertex, position);
+vulkano::impl_vertex!(Vertex, position, normal);
 
 pub(crate) trait Renderer {
-    fn init(options: GraphicOptions, event_loop: &EventLoop<()>) -> Self;
+    fn init(options: GraphicOptions, window: Arc<Window>) -> Self;
 
     fn should_render(&self) -> bool;
 
@@ -88,15 +90,15 @@ pub struct GraphicEngine {
     pub(crate) viewport: Viewport,
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
     // TODO: what they belong to?
-    swapchain: Arc<Swapchain<Window>>,
-    surface: Arc<Surface<Window>>,
+    swapchain: Arc<Swapchain<Arc<Window>>>,
+    surface: Arc<Surface<Arc<Window>>>,
     pub(crate) materials: Rc<RefCell<dyn Materials>>,
     // because who needs more than one? TODO: or something
     objects: Vec<RenderMesh>,
     window_resized: bool,
     recreate_swapchain: bool,
     old_size: PhysicalSize<u32>,
-    images: Vec<Arc<SwapchainImage<Window>>>,
+    images: Vec<Arc<SwapchainImage<Arc<Window>>>>,
     framebuffers: Vec<Arc<Framebuffer>>,
     sync: GameSync,
     frame: u64,
@@ -121,7 +123,7 @@ impl Renderer for GraphicEngine {
     }
 
     // fn init(options: GraphicOptions, event_loop: &mut EventLoop<()>) -> GraphicEngine {
-    fn init(options: GraphicOptions, event_loop: &EventLoop<()>) -> Self {
+    fn init(options: GraphicOptions, window: Arc<Window>) -> Self {
         // can this even work?
         let required_extensions = vulkano_win::required_extensions();
         let instance = Instance::new(InstanceCreateInfo {
@@ -130,18 +132,7 @@ impl Renderer for GraphicEngine {
         })
             .expect("failed to create instance");
 
-        // this is wrong place for this salmfkjbkjresbrbkle aaaaa
-        let surface = WindowBuilder::new()
-            .with_transparent(true)
-            // .with_decorations(false)
-            .with_resizable(true)
-            .with_min_inner_size(Self::adjust_physical_side(
-                PhysicalSize::new(400, 400),
-                PhysicalSize::new(400, 400),
-            ))
-            .with_title("Game or something idk yet")
-            .build_vk_surface(&event_loop, instance.clone())
-            .unwrap();
+        let surface = create_surface_from_winit(window, instance.clone()).unwrap();
 
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
@@ -388,15 +379,16 @@ impl GraphicEngine {
 // TODO: simplify
         let dimensions: Vec2 = graphic_engine.viewport.dimensions.into();
 
-        let mut view = Mat4::look_at_lh(
-            graphic_engine.camera.transform.position,
-            Vec3::ZERO,
-            Vec3::new(0.0, 0.5, 0.0)
+        let camera = &graphic_engine.camera;
+        let mut view = Mat4::look_at_rh(
+            camera.transform.position(),
+            camera.transform.position() + camera.transform.forward(),
+            camera.transform.up(),
         );
         view.y_axis.y *= -1.0;
 
         let aspect = dimensions.x / dimensions.y;
-        let perspective = Mat4::perspective_lh(
+        let perspective = Mat4::perspective_rh(
             graphic_engine.camera.camera.field_of_view.to_radians(), aspect, graphic_engine.camera.camera.near_clip_plane, graphic_engine.camera.camera.far_clip_plane
         );
         // let orto = Mat4::orthographic_lh(-aspect, aspect, -1.0, 1.0, 0.1, 1.1);
@@ -418,7 +410,7 @@ impl GraphicEngine {
             .begin_render_pass(
                 framebuffer.clone(),
                 SubpassContents::Inline,
-                vec![[0.0, 0.0, 0.0, 0.0].into(), [0.0, 0.0, 0.0, 0.0].into()],
+                vec![[0.4, 0.4, 0.4, 1.0].into(), [0.4, 0.4, 0.4, 1.0].into()],
             )
             .unwrap();
 
