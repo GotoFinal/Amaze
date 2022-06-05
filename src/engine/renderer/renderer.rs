@@ -1,5 +1,6 @@
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
+use std::f32::consts::PI;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -28,6 +29,7 @@ use vulkano::swapchain::{
 use vulkano::sync::{self, FlushError, GpuFuture};
 use vulkano_win::{create_surface_from_winit, VkSurfaceBuild};
 use winit::dpi::PhysicalSize;
+use winit::event::VirtualKeyCode::{A, B};
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowBuilder};
 
@@ -53,6 +55,7 @@ pub type VertexIndex = u16;
 #[derive(Debug, Default, Copy, Clone)]
 pub struct ShaderObjectData {
     pub matrix: Mat4,
+    pub normal_matrix: Mat4,
 }
 
 vulkano::impl_vertex!(Vertex, position, normal);
@@ -91,7 +94,7 @@ pub struct GraphicEngine {
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
     // TODO: what they belong to?
     swapchain: Arc<Swapchain<Arc<Window>>>,
-    surface: Arc<Surface<Arc<Window>>>,
+    pub(crate) surface: Arc<Surface<Arc<Window>>>,
     pub(crate) materials: Rc<RefCell<dyn Materials>>,
     // because who needs more than one? TODO: or something
     objects: Vec<RenderMesh>,
@@ -102,14 +105,14 @@ pub struct GraphicEngine {
     framebuffers: Vec<Arc<Framebuffer>>,
     sync: GameSync,
     frame: u64,
-    pub(crate) mesh_cache: RefCell<HashMap<u32, RenderMeshData>>
+    pub(crate) mesh_cache: RefCell<HashMap<u32, RenderMeshData>>,
 }
 
 #[derive(Debug, Default, Copy, Clone)]
 struct PhysicalDeviceProperties {
     color_samples: SampleCounts,
     depth_samples: SampleCounts,
-    max_samples: SampleCounts
+    max_samples: SampleCounts,
 }
 
 impl Renderer for GraphicEngine {
@@ -163,18 +166,22 @@ impl Renderer for GraphicEngine {
         let max_samples: vulkano::image::SampleCounts =
             combine_sample_counts(color_samples, depth_samples);
         let physical_device_properties = PhysicalDeviceProperties {
-            color_samples, depth_samples, max_samples
+            color_samples,
+            depth_samples,
+            max_samples,
         };
         let sample_count = get_sample_count(options.multisampling, max_samples);
 
         let render_pass = get_render_pass(device.clone(), swapchain.clone(), sample_count);
         let framebuffers = get_framebuffers(&images, render_pass.clone(), sample_count);
 
+        let size = surface.window().inner_size();
         let mut viewport = Viewport {
             origin: [0.0, 0.0],
-            dimensions: surface.window().inner_size().into(),
+            dimensions: size.into(),
             depth_range: 0.0..1.0,
         };
+        let aspect_ratio = size.width as f32/size.height as f32;
 
         let images_size = images.len();
         let materials = Rc::new(RefCell::new(MaterialRegistry::create(device.clone(), render_pass.clone(), viewport.clone())));
@@ -188,14 +195,14 @@ impl Renderer for GraphicEngine {
             physical_device_properties,
             queue,
             render_pass,
-            camera: RendererCamera {
-                camera: Camera {
+            camera: RendererCamera::create(Vec3::ZERO,
+                Camera {
+                    aspect_ratio: aspect_ratio,
                     far_clip_plane: 100.0,
                     near_clip_plane: 0.1,
-                    field_of_view: 90.0
-                },
-                transform: Transform::at(Vec3::ZERO)
-            },
+                    field_of_view: 90.0,
+                }
+            ),
             materials,
             objects: Vec::new(),
             command_buffers: Vec::new(),
@@ -208,7 +215,7 @@ impl Renderer for GraphicEngine {
             images,
             sync: GameSync::new(images_size),
             frame: 0,
-            mesh_cache: RefCell::new(HashMap::new())
+            mesh_cache: RefCell::new(HashMap::new()),
         };
         return engine;
     }
@@ -252,7 +259,7 @@ impl Renderer for GraphicEngine {
     fn should_render(&self) -> bool {
         // TODO: invalid surface flag to avoid this call? does it matter? probably not?
         let size = self.surface.window().inner_size();
-        return size.height != 0 && size.width != 0
+        return size.height != 0 && size.width != 0;
     }
 
     fn validate(&mut self) {
@@ -265,7 +272,7 @@ impl Renderer for GraphicEngine {
 
     fn render(&mut self) {
         if !self.should_render() {
-            return
+            return;
         }
         self.frame += 1;
         Self::record_command_buffers(self, self.sync.get_current_i());
@@ -358,7 +365,7 @@ impl GraphicEngine {
     }
 
     fn create_command_buffers(graphic_engine: &mut GraphicEngine) {
-        let projection_view = Self::create_projection_view(graphic_engine);
+        let projection_view = graphic_engine.camera.projection * graphic_engine.camera.view;
         graphic_engine.command_buffers = graphic_engine
             .framebuffers
             .iter()
@@ -369,33 +376,37 @@ impl GraphicEngine {
     }
 
     fn record_command_buffers(graphic_engine: &mut GraphicEngine, image_i: usize) {
-        let projection_view = Self::create_projection_view(graphic_engine);
+        let projection_view = graphic_engine.camera.projection * graphic_engine.camera.view;
         let framebuffer = graphic_engine.framebuffers.get(image_i).unwrap();
         graphic_engine.command_buffers[image_i] = Self::record_command_buffer(&graphic_engine, projection_view, framebuffer)
     }
 
-    // TODO: should be made out of camera after migration to 3d
-    fn create_projection_view(graphic_engine: &mut GraphicEngine) -> Mat4 {
-// TODO: simplify
-        let dimensions: Vec2 = graphic_engine.viewport.dimensions.into();
-
-        let camera = &graphic_engine.camera;
-        let mut view = Mat4::look_at_rh(
-            camera.transform.position(),
-            camera.transform.position() + camera.transform.forward(),
-            camera.transform.up(),
-        );
-        view.y_axis.y *= -1.0;
-
-        let aspect = dimensions.x / dimensions.y;
-        let perspective = Mat4::perspective_rh(
-            graphic_engine.camera.camera.field_of_view.to_radians(), aspect, graphic_engine.camera.camera.near_clip_plane, graphic_engine.camera.camera.far_clip_plane
-        );
-        // let orto = Mat4::orthographic_lh(-aspect, aspect, -1.0, 1.0, 0.1, 1.1);
-        let mut projection = perspective;
-        let projection_view = projection * view;
-        projection_view
-    }
+//     // TODO: should be made out of camera after migration to 3d
+//     fn create_projection_view(graphic_engine: &mut GraphicEngine) -> Mat4 {
+// // TODO: simplify
+//         let dimensions: Vec2 = graphic_engine.viewport.dimensions.into();
+//
+//         let mut camera = &graphic_engine.camera;
+//         let mut view = Mat4::look_at_rh(
+//             camera.transform.position(),
+//             camera.transform.position() + camera.transform.forward(),
+//             // camera.transform.up(),
+//             Vec3::new(0.0, 1.0, 0.0),
+//         );
+//         view.y_axis.y *= -1.0;
+//         camera.view = view;
+//
+//         let aspect = dimensions.x / dimensions.y;
+//         let perspective = Self::create_projection_matrix(
+//             graphic_engine.camera.camera.field_of_view,
+//             aspect,
+//             graphic_engine.camera.camera.near_clip_plane, graphic_engine.camera.camera.far_clip_plane
+//         );
+//         // let orto = Mat4::orthographic_lh(-aspect, aspect, -1.0, 1.0, 0.1, 1000.0);
+//         let mut projection = perspective;
+//         let projection_view = projection * view;
+//         projection_view
+//     }
 
     fn record_command_buffer(graphic_engine: &&mut GraphicEngine, projection_view: Mat4, framebuffer: &Arc<Framebuffer>) -> Arc<PrimaryAutoCommandBuffer> {
         let mut builder = AutoCommandBufferBuilder::primary(
@@ -410,7 +421,7 @@ impl GraphicEngine {
             .begin_render_pass(
                 framebuffer.clone(),
                 SubpassContents::Inline,
-                vec![[0.4, 0.4, 0.4, 1.0].into(), [0.4, 0.4, 0.4, 1.0].into()],
+                vec![[0.4, 0.4, 0.4, 1.0].into(), [0.0, 0.0, 0.0, 1.0].into()],
             )
             .unwrap();
 

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::ops::{Div, Mul};
 
-use glam::{UVec2, Vec2};
+use glam::{UVec2, Vec2, Vec3, Vec3Swizzles};
 use VirtualKeyCode::{LControl, LShift, RControl, Space};
 use winit::event::{Event, VirtualKeyCode};
-use winit::event::VirtualKeyCode::{A, D, Down, Left, Right, RShift, S, Up, W};
+use winit::event::VirtualKeyCode::{A, C, D, Down, Left, Right, RShift, S, Up, W, E, Q, Numpad4, Numpad6, Numpad8, Numpad2, Numpad9, Numpad3, PageUp, PageDown};
 use winit_input_helper::WinitInputHelper;
 
 pub type InputId = u32;
@@ -63,14 +63,22 @@ pub type InputId = u32;
 // }
 // But do i really need it? its all in the loop anyways. Can't even find good example.
 //
-pub trait Input {
-    const MOVE: InputId = 2;
-    const ACTION: InputId = 3;
-    const SECONDARY_ACTION: InputId = 4;
 
+pub const MOVE: InputId = 2;
+pub const ASCEND: InputId = 5;
+pub const ROTATE: InputId = 6;
+pub const ACTION: InputId = 3;
+pub const SECONDARY_ACTION: InputId = 4;
+
+pub trait Input {
     fn create() -> Self;
 
     fn get_move(&self) -> Vec2;
+
+    fn get_axis(&self, id: InputId) -> f32;
+
+    fn get_axis2d(&self, id: InputId) -> Vec2;
+    fn get_axis3d(&self, id: InputId) -> Vec3;
 
     fn get_mouse_move(&self) -> Vec2;
 
@@ -94,9 +102,9 @@ impl Input for InputSystem {
     fn create() -> Self {
         let mut input = WinitInputHelper::new();
         let mut mapping: HashMap<InputId, Box<dyn ValuedInput>> = HashMap::new();
-        mapping.insert(Self::ACTION, Box::new(ButtonInput::simple(vec![Space, LShift, RShift], 1.0)));
-        mapping.insert(Self::SECONDARY_ACTION, Box::new(ButtonInput::simple(vec![LControl, RControl], 1.0)));
-        mapping.insert(Self::MOVE, Box::new(
+        mapping.insert(ACTION, Box::new(ButtonInput::simple(vec![LShift, RShift], 1.0)));
+        mapping.insert(SECONDARY_ACTION, Box::new(ButtonInput::simple(vec![LControl, RControl], 1.0)));
+        mapping.insert(MOVE, Box::new(
             PlaneInput {
                 vertical: AxisInput {
                     positive: ButtonInput::simple(vec![Up, W], 1.0),
@@ -108,6 +116,29 @@ impl Input for InputSystem {
                 },
             }
         ));
+        mapping.insert(ASCEND, Box::new(
+            AxisInput {
+                positive: ButtonInput::simple(vec![E], 1.0),
+                negative: ButtonInput::simple(vec![Q], -1.0),
+            }
+        ));
+
+        mapping.insert(ROTATE, Box::new(
+            Axis3DInput {
+                x: AxisInput {
+                    positive: ButtonInput::simple(vec![Numpad4], 1.0),
+                    negative: ButtonInput::simple(vec![Numpad6], -1.0),
+                },
+                y: AxisInput {
+                    positive: ButtonInput::simple(vec![Numpad8], 1.0),
+                    negative: ButtonInput::simple(vec![Numpad2], -1.0),
+                },
+                z: AxisInput {
+                    positive: ButtonInput::simple(vec![Numpad9, PageUp], 1.0),
+                    negative: ButtonInput::simple(vec![Numpad3, PageDown], -1.0),
+                },
+            }
+        ));
         return InputSystem {
             system: input,
             inputs: mapping,
@@ -115,28 +146,43 @@ impl Input for InputSystem {
     }
 
     fn get_move(&self) -> Vec2 {
-        return self.inputs.get(&Self::MOVE).unwrap()
-            .as_vec2(self)
+        return self.inputs.get(&MOVE).unwrap()
+            .as_vec2(self);
+    }
+
+    fn get_axis(&self, id: InputId) -> f32 {
+        return self.inputs.get(&id).unwrap()
+            .as_value(self);
+    }
+
+    fn get_axis2d(&self, id: InputId) -> Vec2 {
+        return self.inputs.get(&id).unwrap()
+            .as_vec2(self);
+    }
+
+    fn get_axis3d(&self, id: InputId) -> Vec3 {
+        return self.inputs.get(&id).unwrap()
+            .as_vec3(self);
     }
 
     fn get_mouse_move(&self) -> Vec2 {
-        return self.system.mouse_diff().into()
+        return self.system.mouse_diff().into();
     }
 
     fn get_mouse_position(&self) -> Vec2 {
-        return self.system.mouse().unwrap_or_default().into()
+        return self.system.mouse().unwrap_or_default().into();
     }
 
     fn get_mouse_position_normalized(&self) -> Vec2 {
         let pos = self.get_mouse_position();
         let resolution = self.system.resolution().unwrap_or((100, 100));
         let rel = pos.div(Vec2::new(resolution.0 as f32, resolution.1 as f32)) * 2.0;
-        return rel - 1.0
+        return rel - 1.0;
     }
 
     fn is_action(&self) -> bool {
-        return self.inputs.get(&Self::ACTION).unwrap()
-            .as_bool(self)
+        return self.inputs.get(&ACTION).unwrap()
+            .as_bool(self);
     }
 
     fn send_event<'a, T>(&mut self, winit_event: &Event<'a, T>) {
@@ -265,6 +311,12 @@ struct PlaneInput {
     vertical: AxisInput,
 }
 
+struct Axis3DInput {
+    x: AxisInput,
+    y: AxisInput,
+    z: AxisInput,
+}
+
 impl PlaneInput {
     fn new(horizontal: AxisInput, vertical: AxisInput) -> PlaneInput {
         return PlaneInput { horizontal, vertical };
@@ -278,15 +330,30 @@ impl PlaneInput {
     }
 }
 
+impl Axis3DInput {
+    fn new(x: AxisInput, y: AxisInput, z: AxisInput) -> Axis3DInput {
+        return Axis3DInput { x, y, z };
+    }
+
+    fn get_value(&self, system: &InputSystem) -> Vec3 {
+        let mut result = Vec3::ZERO;
+        result.x += self.x.get_value(system);
+        result.y += self.y.get_value(system);
+        result.z += self.z.get_value(system);
+        return result.normalize_or_zero();
+    }
+}
+
 trait ValuedInput {
     fn as_bool(&self, system: &InputSystem) -> bool;
     fn as_value(&self, system: &InputSystem) -> f32;
     fn as_vec2(&self, system: &InputSystem) -> Vec2;
+    fn as_vec3(&self, system: &InputSystem) -> Vec3;
 }
 
 impl ValuedInput for ButtonInput {
     fn as_bool(&self, system: &InputSystem) -> bool {
-        return self.is_held(system)
+        return self.is_held(system);
     }
 
     fn as_value(&self, system: &InputSystem) -> f32 {
@@ -296,6 +363,10 @@ impl ValuedInput for ButtonInput {
     fn as_vec2(&self, system: &InputSystem) -> Vec2 {
         let value = self.get_value(system);
         return Vec2::new(value, value).normalize_or_zero();
+    }
+    fn as_vec3(&self, system: &InputSystem) -> Vec3 {
+        let value = self.get_value(system);
+        return Vec3::new(value, value, value).normalize_or_zero();
     }
 }
 
@@ -313,6 +384,12 @@ impl ValuedInput for AxisInput {
         let y = self.negative.get_value(system);
         return Vec2::new(x, y).normalize_or_zero();
     }
+    fn as_vec3(&self, system: &InputSystem) -> Vec3 {
+        let x = self.positive.get_value(system);
+        let y = self.negative.get_value(system);
+        let z = self.negative.get_value(system);
+        return Vec3::new(x, y, z).normalize_or_zero();
+    }
 }
 
 impl ValuedInput for PlaneInput {
@@ -325,6 +402,27 @@ impl ValuedInput for PlaneInput {
     }
 
     fn as_vec2(&self, system: &InputSystem) -> Vec2 {
+        return self.get_value(system);
+    }
+
+    fn as_vec3(&self, system: &InputSystem) -> Vec3 {
+        return self.get_value(system).extend(0.0);
+    }
+}
+
+impl ValuedInput for Axis3DInput {
+    fn as_bool(&self, system: &InputSystem) -> bool {
+        return self.as_value(system) != 0.0;
+    }
+
+    fn as_value(&self, system: &InputSystem) -> f32 {
+        return self.get_value(system).length();
+    }
+
+    fn as_vec2(&self, system: &InputSystem) -> Vec2 {
+        return self.get_value(system).xy(); // so bad
+    }
+    fn as_vec3(&self, system: &InputSystem) -> Vec3 {
         return self.get_value(system);
     }
 }

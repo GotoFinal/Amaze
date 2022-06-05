@@ -8,8 +8,9 @@ pub struct RenderId {
     pub id: u32
 }
 
-#[derive(Component, Copy, Clone)]
+#[derive(Component, Copy, Clone, PartialEq)]
 pub struct Camera {
+    pub aspect_ratio: f32,
     pub far_clip_plane: f32,
     pub near_clip_plane: f32,
     pub field_of_view: f32

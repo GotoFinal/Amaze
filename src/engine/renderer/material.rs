@@ -22,6 +22,7 @@ use vulkano::shader::{ShaderModule, ShaderStage};
 use crate::engine::renderer::graphic_object::RenderMesh;
 use crate::engine::renderer::renderer::{ShaderObjectData, Vertex};
 use crate::GraphicEngine;
+
 mod vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
@@ -31,15 +32,24 @@ mod vertex_shader {
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
 
-layout(location = 0) out vec3 v_normal;
+layout(location = 0) out vec3 fragColor;
 layout(push_constant) uniform constants
 {
 	mat4 matrix;
+    mat4 normal_matrix;
 } PushConstants;
 
+const vec3 DIRECTION_TO_LIGHT = normalize(vec3(1.0, -3.0, -1.0));
+const float AMBIENT = 0.02;
+
 void main() {
-    v_normal = normalize(normal);
-    gl_Position = PushConstants.matrix * vec4(position, 1.0);
+  gl_Position = PushConstants.matrix * vec4(position, 1.0);
+
+  vec3 normalWorldSpace = normalize(mat3(PushConstants.normal_matrix) * normal);
+
+  float lightIntensity = AMBIENT + max(dot(normalWorldSpace, DIRECTION_TO_LIGHT), 0);
+
+  fragColor = lightIntensity * vec3(0.9, 0.8, 1.0);
 }
 "
     }
@@ -51,11 +61,12 @@ mod fragment_shader {
         src: "
 #version 450
 
-layout(location = 0) in vec3 v_normal;
+
+layout (location = 0) in vec3 fragColor;
 layout(location = 0) out vec4 f_color;
+
 void main() {
-    f_color = vec4(clamp(dot(v_normal, -vec3(10.0f, 10.0f, 10.00f)), 0.0f, 1.0f) * vec3(1.0f, 0.93f, 0.56f), 1.0f);
-    //f_color = vec4(v_normal, 1.0);
+    f_color = vec4(fragColor, 1.0);
 }
 "
     }
@@ -99,9 +110,7 @@ impl Material for MaterialData {
 
     fn draw<'a>(&self, mesh: &RenderMesh, projection_view: Mat4, commands: &'a mut PrimaryCommandBuilder) -> &'a mut PrimaryCommandBuilder {
         let transform = mesh.transform;
-        let quat = transform.rotation();
-        let model = Mat4::from_scale_rotation_translation(transform.scale(), quat, transform.position());
-        let matrix = projection_view * model;
+        let matrix = projection_view * transform.matrix();
 
         let vertices_size = mesh.data.vertices_buffer.len();
         let indices_size = mesh.data.indices_buffer.len();
@@ -114,6 +123,7 @@ impl Material for MaterialData {
                 0,
                 ShaderObjectData {
                     matrix: matrix,
+                    normal_matrix: transform.matrix().inverse()
                 },
             )
             .draw_indexed(indices_size as u32, 1, 0, 0, 1)
@@ -133,7 +143,7 @@ impl MaterialRegistry {
         map.insert(0, def);
         return MaterialRegistry {
             materials: map,
-            last_key: 0
+            last_key: 0,
         };
     }
 }
@@ -146,7 +156,7 @@ pub trait Materials {
 
 impl Materials for MaterialRegistry {
     fn get(&self, key: MaterialKey) -> Rc<RefCell<dyn Material>> {
-        return self.materials.borrow().get(&key).unwrap().clone()
+        return self.materials.borrow().get(&key).unwrap().clone();
     }
 
     fn get_default(&self) -> MaterialKey {
