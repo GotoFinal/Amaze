@@ -202,7 +202,7 @@ impl Renderer for GraphicEngine {
                     aspect_ratio: aspect_ratio,
                     far_clip_plane: 100.0,
                     near_clip_plane: 0.1,
-                    field_of_view: 90.0,
+                    field_of_view: 70.0,
                 }
             ),
             materials,
@@ -382,33 +382,6 @@ impl GraphicEngine {
         let framebuffer = graphic_engine.framebuffers.get(image_i).unwrap();
         graphic_engine.command_buffers[image_i] = Self::record_command_buffer(&graphic_engine, projection_view, framebuffer)
     }
-
-//     // TODO: should be made out of camera after migration to 3d
-//     fn create_projection_view(graphic_engine: &mut GraphicEngine) -> Mat4 {
-// // TODO: simplify
-//         let dimensions: Vec2 = graphic_engine.viewport.dimensions.into();
-//
-//         let mut camera = &graphic_engine.camera;
-//         let mut view = Mat4::look_at_rh(
-//             camera.transform.position(),
-//             camera.transform.position() + camera.transform.forward(),
-//             // camera.transform.up(),
-//             Vec3::new(0.0, 1.0, 0.0),
-//         );
-//         view.y_axis.y *= -1.0;
-//         camera.view = view;
-//
-//         let aspect = dimensions.x / dimensions.y;
-//         let perspective = Self::create_projection_matrix(
-//             graphic_engine.camera.camera.field_of_view,
-//             aspect,
-//             graphic_engine.camera.camera.near_clip_plane, graphic_engine.camera.camera.far_clip_plane
-//         );
-//         // let orto = Mat4::orthographic_lh(-aspect, aspect, -1.0, 1.0, 0.1, 1000.0);
-//         let mut projection = perspective;
-//         let projection_view = projection * view;
-//         projection_view
-//     }
 
     fn record_command_buffer(graphic_engine: &&mut GraphicEngine, projection_view: Mat4, framebuffer: &Arc<Framebuffer>) -> Arc<PrimaryAutoCommandBuffer> {
         let mut builder = AutoCommandBufferBuilder::primary(

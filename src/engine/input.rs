@@ -3,7 +3,7 @@ use std::ops::{Div, Mul};
 
 use glam::{UVec2, Vec2, Vec3, Vec3Swizzles};
 use VirtualKeyCode::{LControl, LShift, RControl, Space};
-use winit::event::{Event, VirtualKeyCode};
+use winit::event::{DeviceEvent, Event, VirtualKeyCode};
 use winit::event::VirtualKeyCode::{A, C, D, Down, Left, Right, RShift, S, Up, W, E, Q, Numpad4, Numpad6, Numpad8, Numpad2, Numpad9, Numpad3, PageUp, PageDown};
 use winit_input_helper::WinitInputHelper;
 
@@ -89,11 +89,13 @@ pub trait Input {
     fn is_action(&self) -> bool;
 
     fn send_event<'a, T>(&mut self, event: &Event<'a, T>);
+    fn send_end_frame_event(&mut self);
 }
 
 pub struct InputSystem {
     pub system: WinitInputHelper,
     inputs: HashMap<InputId, Box<dyn ValuedInput>>,
+    mouse_diff: Vec2
 }
 
 // TODO: does not handle collisions between shortcuts, if 2 bindings are possible only the more advanced one should be activated
@@ -142,6 +144,7 @@ impl Input for InputSystem {
         return InputSystem {
             system: input,
             inputs: mapping,
+            mouse_diff: Vec2::ZERO
         };
     }
 
@@ -166,7 +169,7 @@ impl Input for InputSystem {
     }
 
     fn get_mouse_move(&self) -> Vec2 {
-        return self.system.mouse_diff().into();
+        return self.mouse_diff
     }
 
     fn get_mouse_position(&self) -> Vec2 {
@@ -186,7 +189,23 @@ impl Input for InputSystem {
     }
 
     fn send_event<'a, T>(&mut self, winit_event: &Event<'a, T>) {
+        match winit_event {
+            Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion {
+                    delta: (x, z),
+                    ..
+                },
+                ..
+            } => {
+                self.mouse_diff = (*x as f32, *z as f32).into();
+            }
+            _ => {}
+        }
         self.system.update(winit_event);
+    }
+
+    fn send_end_frame_event(&mut self) {
+        self.mouse_diff = Vec2::ZERO;
     }
 }
 

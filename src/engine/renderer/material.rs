@@ -41,7 +41,7 @@ layout(push_constant) uniform constants
     mat4 normal_matrix;
 } PushConstants;
 
-const vec3 DIRECTION_TO_LIGHT = normalize(vec3(1.0, -3.0, -1.0));
+const vec3 DIRECTION_TO_LIGHT = normalize(vec3(1.0, 3.0, -1.0));
 const float AMBIENT = 0.02;
 
 void main() {

@@ -22,7 +22,7 @@ impl GraphicOptions {
     pub(crate) fn default() -> Self {
         GraphicOptions {
             multisampling: Multisampling::Sample2,
-            buffering: Buffering::Triple
+            buffering: Buffering::Triple,
         }
     }
 }
