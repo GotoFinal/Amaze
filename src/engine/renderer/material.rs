@@ -1,4 +1,4 @@
-use std::borrow::{Borrow};
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -7,15 +7,17 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use glam::{Mat4, Quat, quat, Vec3};
+use glam::{quat, Mat4, Quat, Vec3};
 use vulkano::buffer::TypedBufferAccess;
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::device::Device;
-use vulkano::pipeline::{GraphicsPipeline, PipelineLayout};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
+use vulkano::pipeline::graphics::rasterization::{RasterizationState, PolygonMode};
 use vulkano::pipeline::graphics::vertex_input::BuffersDefinition;
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
 use vulkano::pipeline::layout::{PipelineLayoutCreateInfo, PushConstantRange};
+use vulkano::pipeline::{GraphicsPipeline, PipelineLayout};
+use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
 use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::shader::{ShaderModule, ShaderStage};
 
@@ -62,7 +64,7 @@ mod fragment_shader {
 #version 450
 
 
-layout (location = 0) in vec3 fragColor;
+layout(location = 0) in vec3 fragColor;
 layout(location = 0) out vec4 f_color;
 
 void main() {
@@ -112,8 +114,7 @@ impl Material for MaterialData {
         let transform = mesh.transform;
         let matrix = projection_view * transform.matrix();
 
-        let vertices_size = mesh.data.vertices_buffer.len();
-        let indices_size = mesh.data.indices_buffer.len();
+        let indices_count = mesh.data.indices_buffer.len();
         let pipeline = self.graphic_pipeline.clone();
         return commands.bind_pipeline_graphics(pipeline)
             .bind_vertex_buffers(0, mesh.data.vertices_buffer.clone())
@@ -122,12 +123,12 @@ impl Material for MaterialData {
                 self.pipeline_layout.clone(),
                 0,
                 ShaderObjectData {
-                    matrix: matrix,
-                    normal_matrix: transform.matrix().inverse()
+                    matrix,
+                    normal_matrix: transform.matrix().inverse(),
                 },
             )
-            .draw_indexed(indices_size as u32, 1, 0, 0, 1)
-            .unwrap();
+            .draw_indexed(indices_count as u32, 1, 0, 0, 0)
+            .unwrap()
     }
 }
 
@@ -156,7 +157,7 @@ pub trait Materials {
 
 impl Materials for MaterialRegistry {
     fn get(&self, key: MaterialKey) -> Rc<RefCell<dyn Material>> {
-        return self.materials.borrow().get(&key).unwrap().clone();
+        return self.materials.get(&key).unwrap().clone();
     }
 
     fn get_default(&self) -> MaterialKey {
@@ -223,6 +224,8 @@ fn get_pipeline(
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
         .fragment_shader(fs.entry_point("main").unwrap(), ())
         .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+        .rasterization_state(RasterizationState { polygon_mode: PolygonMode::Fill, ..Default::default() })
+        .depth_stencil_state(DepthStencilState::simple_depth_test())
         .with_pipeline_layout(device, pipeline_layout)
         .unwrap()
 }

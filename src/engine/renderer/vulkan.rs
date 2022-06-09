@@ -2,6 +2,7 @@ use std::cmp::min;
 use std::sync::Arc;
 use vulkano::device::{Device, DeviceOwned, DeviceExtensions};
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType, QueueFamily};
+use vulkano::format::Format;
 use vulkano::image::{AttachmentImage, ImageAccess, ImageUsage, SampleCount, SampleCounts, SwapchainImage};
 use vulkano::image::view::ImageView;
 use vulkano::instance::Instance;
@@ -70,6 +71,7 @@ pub fn get_sample_count(sample: Multisampling, max_samples: SampleCounts) -> Sam
 }
 
 pub fn get_framebuffers(
+    device: Arc<Device>,
     images: &[Arc<SwapchainImage<Arc<Window>>>],
     render_pass: Arc<RenderPass>,
     sample: SampleCount
@@ -84,18 +86,19 @@ pub fn get_framebuffers(
                     view.image().dimensions().width_height(),
                     sample,
                     image.format(),
-                )
-                    .unwrap(),
-            )
-                .unwrap();
+                ).unwrap(),
+            ).unwrap();
+
+            let depth = ImageView::new_default(
+                AttachmentImage::transient(device.clone(), view.image().dimensions().width_height(), Format::D16_UNORM).unwrap()).unwrap();
+
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![intermediary, view],
+                    attachments: vec![view, depth.clone()],
                     ..Default::default()
                 },
-            )
-                .unwrap()
+            ).unwrap()
         })
         .collect::<Vec<_>>()
 }
@@ -105,47 +108,75 @@ pub fn get_render_pass(
     swapchain: Arc<Swapchain<Arc<Window>>>,
     sample: SampleCount,
 ) -> Arc<RenderPass> {
-    match sample {
-        SampleCount::Sample1 => vulkano::single_pass_renderpass!(
+    vulkano::single_pass_renderpass!(
             device.clone(),
               attachments: {
                 color: {
                     load: Clear,
                     store: Store,
                     format: swapchain.image_format(),
+                    samples: 1,
+                },
+                depth: {
+                    load: Clear,
+                    store: DontCare,
+                    format: Format::D16_UNORM,
                     samples: 1,
                 }
             },
             pass: {
                 color: [color],
-                depth_stencil: {}
+                depth_stencil: {depth}
             }
         )
-            .unwrap(),
-        _ => vulkano::single_pass_renderpass!(
-            device.clone(),
-              attachments: {
-                intermediary: {
-                    load: Clear,
-                    store: DontCare,
-                    format: swapchain.image_format(),
-                    samples: sample as u32,
-                },
-                color: {
-                    load: Clear,
-                    store: Store,
-                    format: swapchain.image_format(),
-                    samples: 1,
-                }
-            },
-            pass: {
-                color: [intermediary],
-                depth_stencil: {},
-                resolve: [color]
-            }
-        )
-            .unwrap(),
-    }
+        .unwrap()
+    // match sample {
+    //     SampleCount::Sample1 => vulkano::single_pass_renderpass!(
+    //         device.clone(),
+    //           attachments: {
+    //             color: {
+    //                 load: Clear,
+    //                 store: Store,
+    //                 format: swapchain.image_format(),
+    //                 samples: 1,
+    //             },
+    //             depth: {
+    //                 load: Clear,
+    //                 store: DontCare,
+    //                 format: Format::D16_UNORM,
+    //                 samples: 1,
+    //             }
+    //         },
+    //         pass: {
+    //             color: [color],
+    //             depth_stencil: {depth}
+    //         }
+    //     )
+    //         .unwrap(),
+    //     _ => vulkano::single_pass_renderpass!(
+    //         device.clone(),
+    //           attachments: {
+    //             intermediary: {
+    //                 load: Clear,
+    //                 store: DontCare,
+    //                 format: swapchain.image_format(),
+    //                 samples: sample as u32,
+    //             },
+    //             color: {
+    //                 load: Clear,
+    //                 store: Store,
+    //                 format: swapchain.image_format(),
+    //                 samples: 1,
+    //             }
+    //         },
+    //         pass: {
+    //             color: [intermediary],
+    //             depth_stencil: {},
+    //             resolve: [color]
+    //         }
+    //     )
+    //         .unwrap(),
+    // }
 }
 
 pub fn create_swapchain(options: GraphicOptions, surface: &Arc<Surface<Arc<Window>>>, physical_device: PhysicalDevice, device: &Arc<Device>) -> (Arc<Swapchain<Arc<Window>>>, Vec<Arc<SwapchainImage<Arc<Window>>>>) {

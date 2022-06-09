@@ -14,10 +14,11 @@ use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage,
     PrimaryAutoCommandBuffer, SubpassContents,
 };
-use vulkano::device::{Device, DeviceCreateInfo, Queue, QueueCreateInfo};
+use vulkano::device::{Device, DeviceCreateInfo, Features, Queue, QueueCreateInfo};
 use vulkano::device::DeviceExtensions;
 use vulkano::device::physical::PhysicalDevice;
 use vulkano::format::ClearValue;
+use vulkano::format::ClearValue::Depth;
 use vulkano::image::{SampleCount, SampleCounts, SwapchainImage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::pipeline::graphics::viewport::Viewport;
@@ -152,6 +153,7 @@ impl Renderer for GraphicEngine {
                 enabled_extensions: physical_device
                     .required_extensions()
                     .union(&device_extensions),
+                enabled_features: Features { fill_mode_non_solid: true, ..Features::none() },
                 ..Default::default()
             },
         )
@@ -173,7 +175,7 @@ impl Renderer for GraphicEngine {
         let sample_count = get_sample_count(options.multisampling, max_samples);
 
         let render_pass = get_render_pass(device.clone(), swapchain.clone(), sample_count);
-        let framebuffers = get_framebuffers(&images, render_pass.clone(), sample_count);
+        let framebuffers = get_framebuffers(device.clone(), &images, render_pass.clone(), sample_count);
 
         let size = surface.window().inner_size();
         let mut viewport = Viewport {
@@ -236,7 +238,7 @@ impl Renderer for GraphicEngine {
         };
         self.swapchain = new_swapchain;
         self.images = new_images;
-        self.framebuffers = get_framebuffers(self.images.as_ref(), self.render_pass.clone(), Self::get_samples(self.physical_device_properties, self.options));
+        self.framebuffers = get_framebuffers(self.device.clone(), self.images.as_ref(), self.render_pass.clone(), Self::get_samples(self.physical_device_properties, self.options));
 
         if self.window_resized {
             self.window_resized = false;
@@ -421,13 +423,13 @@ impl GraphicEngine {
             .begin_render_pass(
                 framebuffer.clone(),
                 SubpassContents::Inline,
-                vec![[0.4, 0.4, 0.4, 1.0].into(), [0.0, 0.0, 0.0, 1.0].into()],
+                vec![[0.4, 0.4, 0.4, 1.0].into(), Depth(1f32.into())],
             )
             .unwrap();
 
         for object in &graphic_engine.objects {
-            let material = object.material.clone();
-            commands = graphic_engine.materials.borrow().get(material).deref().borrow().draw(object, projection_view, commands)
+            let material = object.material;
+            commands = graphic_engine.materials.borrow().get(material).borrow().draw(object, projection_view, commands)
         }
 
         commands.end_render_pass().unwrap();
