@@ -42,7 +42,7 @@ layout(push_constant) uniform constants
 } PushConstants;
 
 const vec3 DIRECTION_TO_LIGHT = normalize(vec3(1.0, 3.0, -1.0));
-const float AMBIENT = 0.02;
+const float AMBIENT = 0.06;
 
 void main() {
   gl_Position = PushConstants.matrix * vec4(position, 1.0);

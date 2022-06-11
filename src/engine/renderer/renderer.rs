@@ -36,10 +36,11 @@ use winit::window::{Window, WindowBuilder};
 
 use crate::engine::renderer::graphic_object::{GraphicObject, GraphicObjectDesc, RenderMesh, RenderMeshData};
 use crate::engine::renderer::material::{load_default_material, MaterialRegistry, Materials};
-use crate::engine::renderer::options::GraphicOptions;
+use crate::engine::renderer::options::{GraphicOptions, Multisampling};
 use crate::engine::renderer::vulkan::{combine_sample_counts, create_swapchain, get_framebuffers, get_render_pass, get_sample_count, select_physical_device};
 use crate::{Camera, GameSync, Mesh, Transform};
 use crate::engine::renderer::camera::RendererCamera;
+use crate::engine::renderer::options::Multisampling::Disable;
 
 // TODO: wanted to split code to keep it more clean and this file is already a mess
 
@@ -183,7 +184,7 @@ impl Renderer for GraphicEngine {
             dimensions: size.into(),
             depth_range: 0.0..1.0,
         };
-        let aspect_ratio = size.width as f32/size.height as f32;
+        let aspect_ratio = size.width as f32 / size.height as f32;
 
         let images_size = images.len();
         let materials = Rc::new(RefCell::new(MaterialRegistry::create(device.clone(), render_pass.clone(), viewport.clone())));
@@ -198,12 +199,12 @@ impl Renderer for GraphicEngine {
             queue,
             render_pass,
             camera: RendererCamera::create(Vec3::ZERO,
-                Camera {
-                    aspect_ratio: aspect_ratio,
-                    far_clip_plane: 100.0,
-                    near_clip_plane: 0.1,
-                    field_of_view: 70.0,
-                }
+                                           Camera {
+                                               aspect_ratio: aspect_ratio,
+                                               far_clip_plane: 100.0,
+                                               near_clip_plane: 0.1,
+                                               field_of_view: 70.0,
+                                           },
             ),
             materials,
             objects: Vec::new(),
@@ -391,12 +392,19 @@ impl GraphicEngine {
         )
             .unwrap();
 
+        // TODO: this should be remembered once when recreating frame buffers and then re-used each frame
+        let mut clear_values: Vec<ClearValue> = Vec::with_capacity(3);
+        clear_values.push([0.0, 0.0, 0.0, 1.0].into());
+        if graphic_engine.options.multisampling != Disable {
+            clear_values.push([0.0, 0.0, 0.0, 1.0].into());
+        }
+        clear_values.push(Depth(1.0));
 
         let mut commands: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> = builder
             .begin_render_pass(
                 framebuffer.clone(),
                 SubpassContents::Inline,
-                vec![[0.4, 0.4, 0.4, 1.0].into(), Depth(1f32.into())],
+                clear_values,
             )
             .unwrap();
 

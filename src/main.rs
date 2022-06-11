@@ -62,7 +62,7 @@ fn update_input(mut query: Query<(&mut Transform, &Camera)>, input_sys: NonSend<
         // does not work when rolled by 180*
         let horizontal = Quat::from_xyzw(0.0, ang_x.sin(), 0.0, ang_x.cos());
         let vertical = Quat::from_xyzw(ang_y.sin(), 0.0, 0.0, ang_y.cos());
-        let quat = horizontal * current * vertical;
+        let quat = current * horizontal  * vertical;
 
         let mut position = transform.position();
         let forward = transform.forward() * input.y;

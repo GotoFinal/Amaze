@@ -4,7 +4,7 @@ pub enum Buffering {
     Triple,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Multisampling {
     Disable,
     Sample2,

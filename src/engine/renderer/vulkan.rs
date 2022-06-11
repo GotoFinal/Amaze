@@ -3,13 +3,15 @@ use std::sync::Arc;
 use vulkano::device::{Device, DeviceOwned, DeviceExtensions};
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType, QueueFamily};
 use vulkano::format::Format;
-use vulkano::image::{AttachmentImage, ImageAccess, ImageUsage, SampleCount, SampleCounts, SwapchainImage};
+use vulkano::image::{AttachmentImage, ImageAccess, ImageUsage, ImageViewAbstract, SampleCount, SampleCounts, SwapchainImage};
+use vulkano::image::SampleCount::Sample1;
 use vulkano::image::view::ImageView;
 use vulkano::instance::Instance;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
 use winit::window::Window;
 use crate::engine::renderer::options::{Buffering, Multisampling};
+use crate::engine::renderer::options::Multisampling::Disable;
 use crate::GraphicOptions;
 
 pub fn combine_sample_counts(a: SampleCounts, b: SampleCounts) -> SampleCounts {
@@ -74,28 +76,34 @@ pub fn get_framebuffers(
     device: Arc<Device>,
     images: &[Arc<SwapchainImage<Arc<Window>>>],
     render_pass: Arc<RenderPass>,
-    sample: SampleCount
+    sample: SampleCount,
 ) -> Vec<Arc<Framebuffer>> {
     images
         .iter()
         .map(|image| {
+            let mut attachments: Vec<Arc<dyn ImageViewAbstract>> = Vec::with_capacity(2);
             let view = ImageView::new_default(image.clone()).unwrap();
-            let intermediary = ImageView::new_default(
-                AttachmentImage::transient_multisampled(
-                    render_pass.device().clone(),
-                    view.image().dimensions().width_height(),
-                    sample,
-                    image.format(),
-                ).unwrap(),
-            ).unwrap();
+            attachments.push(view.clone());
+            if sample != Sample1 {
+                let intermediary = ImageView::new_default(
+                    AttachmentImage::transient_multisampled(
+                        render_pass.device().clone(),
+                        view.image().dimensions().width_height(),
+                        sample,
+                        image.format(),
+                    ).unwrap(),
+                ).unwrap();
+                attachments.push(intermediary);
+            }
 
             let depth = ImageView::new_default(
-                AttachmentImage::transient(device.clone(), view.image().dimensions().width_height(), Format::D16_UNORM).unwrap()).unwrap();
+                AttachmentImage::transient_multisampled(device.clone(), view.image().dimensions().width_height(), sample, Format::D16_UNORM).unwrap()).unwrap();
+            attachments.push(depth);
 
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![view, depth.clone()],
+                    attachments: attachments,
                     ..Default::default()
                 },
             ).unwrap()
@@ -108,8 +116,9 @@ pub fn get_render_pass(
     swapchain: Arc<Swapchain<Arc<Window>>>,
     sample: SampleCount,
 ) -> Arc<RenderPass> {
-    vulkano::single_pass_renderpass!(
-            device.clone(),
+    match sample {
+        SampleCount::Sample1 => vulkano::single_pass_renderpass!(
+            device,
               attachments: {
                 color: {
                     load: Clear,
@@ -129,54 +138,37 @@ pub fn get_render_pass(
                 depth_stencil: {depth}
             }
         )
-        .unwrap()
-    // match sample {
-    //     SampleCount::Sample1 => vulkano::single_pass_renderpass!(
-    //         device.clone(),
-    //           attachments: {
-    //             color: {
-    //                 load: Clear,
-    //                 store: Store,
-    //                 format: swapchain.image_format(),
-    //                 samples: 1,
-    //             },
-    //             depth: {
-    //                 load: Clear,
-    //                 store: DontCare,
-    //                 format: Format::D16_UNORM,
-    //                 samples: 1,
-    //             }
-    //         },
-    //         pass: {
-    //             color: [color],
-    //             depth_stencil: {depth}
-    //         }
-    //     )
-    //         .unwrap(),
-    //     _ => vulkano::single_pass_renderpass!(
-    //         device.clone(),
-    //           attachments: {
-    //             intermediary: {
-    //                 load: Clear,
-    //                 store: DontCare,
-    //                 format: swapchain.image_format(),
-    //                 samples: sample as u32,
-    //             },
-    //             color: {
-    //                 load: Clear,
-    //                 store: Store,
-    //                 format: swapchain.image_format(),
-    //                 samples: 1,
-    //             }
-    //         },
-    //         pass: {
-    //             color: [intermediary],
-    //             depth_stencil: {},
-    //             resolve: [color]
-    //         }
-    //     )
-    //         .unwrap(),
-    // }
+            .unwrap(),
+        _ => vulkano::single_pass_renderpass!(
+            device,
+              attachments: {
+                color: {
+                    load: Clear,
+                    store: Store,
+                    format: swapchain.image_format(),
+                    samples: 1,
+                },
+                intermediary: {
+                    load: Clear,
+                    store: DontCare,
+                    format: swapchain.image_format(),
+                    samples: sample as u32,
+                },
+                depth: {
+                    load: Clear,
+                    store: DontCare,
+                    format: Format::D16_UNORM,
+                    samples: sample as u32,
+                }
+            },
+            pass: {
+                color: [intermediary],
+                depth_stencil: {depth},
+                resolve: [color]
+            }
+        )
+            .unwrap(),
+    }
 }
 
 pub fn create_swapchain(options: GraphicOptions, surface: &Arc<Surface<Arc<Window>>>, physical_device: PhysicalDevice, device: &Arc<Device>) -> (Arc<Swapchain<Arc<Window>>>, Vec<Arc<SwapchainImage<Arc<Window>>>>) {
