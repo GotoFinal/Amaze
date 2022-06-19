@@ -57,7 +57,8 @@ pub type VertexIndex = u16;
 #[derive(Debug, Default, Copy, Clone)]
 pub struct ShaderObjectData {
     pub matrix: Mat4,
-    pub normal_matrix: Mat4,
+    // pub normal_matrix: Mat4,
+    pub id: u32
 }
 
 vulkano::impl_vertex!(Vertex, position, normal);
@@ -97,7 +98,7 @@ pub struct GraphicEngine {
     // TODO: what they belong to?
     swapchain: Arc<Swapchain<Arc<Window>>>,
     pub(crate) surface: Arc<Surface<Arc<Window>>>,
-    pub(crate) materials: Rc<RefCell<dyn Materials>>,
+    pub(crate) materials: Arc<RefCell<dyn Materials>>,
     // because who needs more than one? TODO: or something
     objects: Vec<RenderMesh>,
     window_resized: bool,
@@ -107,6 +108,7 @@ pub struct GraphicEngine {
     framebuffers: Vec<Arc<Framebuffer>>,
     sync: GameSync,
     frame: u64,
+    clear_values: Vec<ClearValue>,
     pub(crate) mesh_cache: RefCell<HashMap<u32, RenderMeshData>>,
 }
 
@@ -149,7 +151,6 @@ impl Renderer for GraphicEngine {
         let (device, mut queues) = Device::new(
             physical_device,
             DeviceCreateInfo {
-                // here we pass the desired queue families that we want to use
                 queue_create_infos: vec![QueueCreateInfo::family(queue_family)],
                 enabled_extensions: physical_device
                     .required_extensions()
@@ -187,7 +188,7 @@ impl Renderer for GraphicEngine {
         let aspect_ratio = size.width as f32 / size.height as f32;
 
         let images_size = images.len();
-        let materials = Rc::new(RefCell::new(MaterialRegistry::create(device.clone(), render_pass.clone(), viewport.clone())));
+        let materials = Arc::new(RefCell::new(MaterialRegistry::create(device.clone(), render_pass.clone(), viewport.clone())));
 
         // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa this is bad
         let mut engine = GraphicEngine {
@@ -218,6 +219,7 @@ impl Renderer for GraphicEngine {
             images,
             sync: GameSync::new(images_size),
             frame: 0,
+            clear_values: Vec::new(),
             mesh_cache: RefCell::new(HashMap::new()),
         };
         return engine;
@@ -240,6 +242,15 @@ impl Renderer for GraphicEngine {
         self.swapchain = new_swapchain;
         self.images = new_images;
         self.framebuffers = get_framebuffers(self.device.clone(), self.images.as_ref(), self.render_pass.clone(), Self::get_samples(self.physical_device_properties, self.options));
+
+        // TODO: this should be remembered once when recreating frame buffers and then re-used each frame
+        let mut clear_values: Vec<ClearValue> = Vec::with_capacity(3);
+        clear_values.push([0.0, 0.0, 0.0, 1.0].into());
+        if self.options.multisampling != Disable {
+            clear_values.push([0.0, 0.0, 0.0, 1.0].into());
+        }
+        clear_values.push(Depth(1.0));
+        self.clear_values = clear_values;
 
         if self.window_resized {
             self.window_resized = false;
@@ -265,6 +276,7 @@ impl Renderer for GraphicEngine {
         return size.height != 0 && size.width != 0;
     }
 
+    #[profiling::function]
     fn validate(&mut self) {
         if self.window_resized || self.recreate_swapchain {
             if self.should_render() {
@@ -273,6 +285,7 @@ impl Renderer for GraphicEngine {
         }
     }
 
+    #[profiling::function]
     fn render(&mut self) {
         if !self.should_render() {
             return;
@@ -378,6 +391,7 @@ impl GraphicEngine {
             .collect()
     }
 
+    #[profiling::function]
     fn record_command_buffers(graphic_engine: &mut GraphicEngine, image_i: usize) {
         let projection_view = graphic_engine.camera.projection * graphic_engine.camera.view;
         let framebuffer = graphic_engine.framebuffers.get(image_i).unwrap();
@@ -388,34 +402,35 @@ impl GraphicEngine {
         let mut builder = AutoCommandBufferBuilder::primary(
             graphic_engine.device.clone(),
             graphic_engine.queue.family(), // do i not need to clone or vsc is retarded
-            CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
+            CommandBufferUsage::OneTimeSubmit, // don't forget to write the correct buffer usage
         )
             .unwrap();
-
-        // TODO: this should be remembered once when recreating frame buffers and then re-used each frame
-        let mut clear_values: Vec<ClearValue> = Vec::with_capacity(3);
-        clear_values.push([0.0, 0.0, 0.0, 1.0].into());
-        if graphic_engine.options.multisampling != Disable {
-            clear_values.push([0.0, 0.0, 0.0, 1.0].into());
-        }
-        clear_values.push(Depth(1.0));
+        let clear_values = &graphic_engine.clear_values;
 
         let mut commands: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> = builder
             .begin_render_pass(
                 framebuffer.clone(),
                 SubpassContents::Inline,
-                clear_values,
+                clear_values.iter().copied(),
             )
             .unwrap();
 
-        for object in &graphic_engine.objects {
-            let material = object.material;
-            commands = graphic_engine.materials.borrow().get(material).borrow().draw(object, projection_view, commands)
-        }
+        Self::render_objects(&graphic_engine, projection_view, commands);
 
         commands.end_render_pass().unwrap();
 
         Arc::new(builder.build().unwrap())
+    }
+
+    #[profiling::function]
+    fn render_objects(graphic_engine: &&&mut GraphicEngine, projection_view: Mat4, mut commands: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>) {
+        let materials = graphic_engine.materials.borrow();
+        let material = materials.get(0);
+        let whatever = material.borrow();
+        for object in &graphic_engine.objects {
+            let material = object.material;
+            commands =  whatever.draw(object, projection_view, commands)
+        }
     }
 
     fn adjust_physical_side(size: PhysicalSize<u32>, old_size: PhysicalSize<u32>) -> PhysicalSize<u32> {

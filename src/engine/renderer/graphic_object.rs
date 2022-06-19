@@ -32,6 +32,7 @@ pub struct RenderMesh {
 pub struct RenderMeshData {
     pub vertices_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
     pub indices_buffer: Arc<CpuAccessibleBuffer<[VertexIndex]>>,
+    pub id: u32
 }
 
 pub trait GraphicObject {

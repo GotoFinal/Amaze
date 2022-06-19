@@ -13,7 +13,7 @@ pub struct RendererCamera {
 impl RendererCamera {
     pub fn create(position: Vec3, camera: Camera) -> RendererCamera {
         return RendererCamera {
-            transform: Transform::new(position, Quat::IDENTITY, Vec3::ONE),
+            transform: Transform::new(position.into(), Quat::IDENTITY, Vec3::ONE),
             camera: camera,
             old_camera: camera,
             projection: Self::create_projection_matrix(camera.field_of_view, camera.aspect_ratio, camera.near_clip_plane, camera.far_clip_plane),
@@ -21,15 +21,17 @@ impl RendererCamera {
         }
     }
 
+    #[profiling::function]
     pub fn update(&mut self) {
         if self.camera != self.old_camera {
             self.old_camera = self.camera;
             self.projection = Self::create_projection_matrix(self.camera.field_of_view, self.camera.aspect_ratio, self.camera.near_clip_plane, self.camera.far_clip_plane)
         }
 
+        let pos = self.transform.position().0;
         self.view = Mat4::look_at_rh(
-            self.transform.position(),
-            self.transform.position() + self.transform.forward(),
+            pos,
+            pos + self.transform.forward(),
             self.transform.up()
         )
     }

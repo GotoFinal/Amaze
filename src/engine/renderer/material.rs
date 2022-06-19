@@ -38,7 +38,8 @@ layout(location = 0) out vec3 fragColor;
 layout(push_constant) uniform constants
 {
 	mat4 matrix;
-    mat4 normal_matrix;
+   // mat4 normal_matrix;
+    uint id;
 } PushConstants;
 
 const vec3 DIRECTION_TO_LIGHT = normalize(vec3(1.0, 3.0, -1.0));
@@ -47,11 +48,16 @@ const float AMBIENT = 0.06;
 void main() {
   gl_Position = PushConstants.matrix * vec4(position, 1.0);
 
-  vec3 normalWorldSpace = normalize(mat3(PushConstants.normal_matrix) * normal);
+  vec3 normalWorldSpace = normalize(mat3(PushConstants.matrix) * normal);
 
   float lightIntensity = AMBIENT + max(dot(normalWorldSpace, DIRECTION_TO_LIGHT), 0);
 
-  fragColor = lightIntensity * vec3(0.9, 0.8, 1.0);
+  vec3 color = vec3(0.8, 0.8, 0.8);
+  if (PushConstants.id == 1) {
+    color = vec3(0.3, 1.0, 0.3);
+  }
+
+  fragColor = lightIntensity * color;
 }
 "
     }
@@ -124,7 +130,8 @@ impl Material for MaterialData {
                 0,
                 ShaderObjectData {
                     matrix,
-                    normal_matrix: transform.matrix().inverse(),
+                    // normal_matrix: transform.matrix().inverse(),
+                    id: mesh.data.id
                 },
             )
             .draw_indexed(indices_count as u32, 1, 0, 0, 0)

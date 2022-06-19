@@ -21,7 +21,7 @@ pub struct GraphicOptions {
 impl GraphicOptions {
     pub(crate) fn default() -> Self {
         GraphicOptions {
-            multisampling: Multisampling::Sample2,
+            multisampling: Multisampling::Disable,
             buffering: Buffering::Triple,
         }
     }
